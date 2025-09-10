@@ -2,3 +2,6 @@
 __pycache__/
 ./venv/
 .env
+
+# Arquivos modelo
+json-img1\[1\].txt
