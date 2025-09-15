@@ -1,91 +1,65 @@
-import json
 import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
-def teste_extracao(dados_json: dict) -> list:
-    """
-    Extrai, transforma e formata os dados das revistas de um JSON de chamada
-    para o padrão da tabela 'Revistas' do banco de dados.
+# Carrega as variáveis de ambiente do arquivo .env
+load_dotenv()
 
-    Args:
-        dados_json: O dicionário python carregado do arquivo JSON.
+# Obtém as credenciais do Supabase do ambiente
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_API_KEY")
 
-    Returns:
-        Uma lista de dicionários, onde cada dicionário representa uma revista
-        pronta para ser inserida no banco de dados.
-    """
-    revistas_formatadas = []
-    lista_revistas_do_json = dados_json.get("revistas", [])
+# Cria o cliente Supabase
+supabase: Client = create_client(url, key)
 
-    if not lista_revistas_do_json:
-        print("A chave 'revistas' não foi encontrada ou está vazia no JSON.")
-        return []
+def registrar_usuario():
+    """Registra um novo usuário no Supabase."""
+    email = input("Digite o e-mail para registro: ")
+    password = input("Digite a senha para registro: ")
+    try:
+        # A função sign_up cria o usuário
+        resposta = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+        })
+        print("\nUsuário registrado com sucesso!")
+        print("Por favor, verifique seu e-mail para confirmar o registro.")
+        print("Dados do usuário:", resposta.user)
+    except Exception as e:
+        print(f"\nErro no registro: {e}")
 
-    print(f"Encontradas {len(lista_revistas_do_json)} revistas para processar...\n")
-
-    for revista in lista_revistas_do_json:
-        # --- Tratamento e Conversão de Dados ---
-
-        # Converte 'numero_edicao' para inteiro
-        try:
-            edicao = int(revista.get("edicao", 0))
-        except (ValueError, TypeError):
-            edicao = 0
-
-        # Converte 'rep' (repartido/entregue) para 'qtd_estoque'
-        try:
-            # Usamos 'rep' como a quantidade que o ponto de venda recebeu.
-            estoque = int(revista.get("rep") or 0)
-        except (ValueError, TypeError):
-            estoque = 0
-
-        # Converte preços (strings com vírgula) para float
-        try:
-            preco_c = float(str(revista.get("pco_capa", "0.0")).replace(',', '.'))
-        except (ValueError, TypeError):
-            preco_c = 0.0
-
-        try:
-            preco_l = float(str(revista.get("pco_liq", "0.0")).replace(',', '.'))
-        except (ValueError, TypeError):
-            preco_l = 0.0
+def login_usuario():
+    """Faz o login de um usuário e exibe o token de acesso."""
+    email = input("Digite seu e-mail para login: ")
+    password = input("Digite sua senha para login: ")
+    try:
+        # A função sign_in_with_password autentica o usuário
+        resposta = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password,
+        })
         
-        # Limpa o código de barras, removendo espaços
-        cod_barras = str(revista.get("ean", "")).replace(" ", "")
+        # O token de acesso está dentro do objeto da sessão
+        access_token = resposta.session.access_token
+        
+        print("\nLogin realizado com sucesso!")
+        print("\n--- SEU TOKEN DE ACESSO (JWT) ---")
+        print(access_token)
+        print("\nUse este token no cabeçalho 'Authorization' como 'Bearer <token>'")
+        
+    except Exception as e:
+        print(f"\nErro no login: {e}")
 
-        # --- Mapeamento para o formato da tabela ---
-        revista_mapeada = {
-            "nome": revista.get("produto"),
-            "apelido_revista": revista.get("subtitulo"),
-            "numero_edicao": edicao,
-            "codigo_barras": cod_barras,
-            "qtd_estoque": estoque,
-            "preco_capa": preco_c,
-            "preco_liquido": preco_l,
-        }
-        revistas_formatadas.append(revista_mapeada)
-
-    return revistas_formatadas
-
-# --- Bloco de Execução Principal do Teste ---
 if __name__ == "__main__":
-    nome_arquivo = "json-img1[1].json"
-
-    if not os.path.exists(nome_arquivo):
-        print(f"ERRO: Arquivo '{nome_arquivo}' não encontrado.")
-        print("Certifique-se de que ele está no mesmo diretório que este script.")
+    print("O que você deseja fazer?")
+    print("1. Registrar um novo usuário")
+    print("2. Fazer login e obter o token")
+    
+    escolha = input("Digite sua escolha (1 ou 2): ")
+    
+    if escolha == '1':
+        registrar_usuario()
+    elif escolha == '2':
+        login_usuario()
     else:
-        try:
-            with open(nome_arquivo, 'r', encoding='utf-8') as f:
-                dados_arquivo_json = json.load(f)
-
-            # Chama a função de processamento
-            revistas_prontas = teste_extracao(dados_arquivo_json)
-
-            # Imprime o resultado de forma legível
-            print("--- Resultado do Mapeamento (simulando o que será enviado ao DB) ---")
-            print(json.dumps(revistas_prontas, indent=4, ensure_ascii=False))
-
-        except json.JSONDecodeError:
-            print(f"ERRO: O arquivo '{nome_arquivo}' contém um JSON inválido.")
-        except Exception as e:
-            print(f"Ocorreu um erro inesperado: {e}")
+        print("Escolha inválida.")
