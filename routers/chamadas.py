@@ -16,8 +16,51 @@ st = importar_configs()
 supabase: Client = create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)
 
 # Função de apoio para cadastro de chamada
-def cadastrar_revistas(chamada):
-    pass
+def cadastrar_revistas(chamada_json: dict, supabase_client: Client):
+    """
+    Processa os dados das revistas do JSON e os insere em lote na tabela 'Revistas'.
+    """
+    revistas_para_inserir = []
+    lista_revistas_json = chamada_json.get("revistas", [])
+
+    if not lista_revistas_json:
+        return { "status": "sem_revistas", "message": "Nenhuma revista encontrada no documento." }
+
+    for revista_json in lista_revistas_json:
+        try:
+            edicao = int(revista_json.get("edicao", 0))
+            estoque = int(revista_json.get("rep") or 0)
+            preco_c = float(str(revista_json.get("pco_capa", "0.0")).replace(',', '.'))
+            preco_l = float(str(revista_json.get("pco_liq", "0.0")).replace(',', '.'))
+            cod_barras = str(revista_json.get("ean", "")).replace(" ", "")
+        except (ValueError, TypeError) as e:
+            print(f"Erro ao converter dados para a revista '{revista_json.get('produto')}': {e}")
+            continue 
+
+        revistas_para_inserir.append({
+            "nome": revista_json.get("produto"),
+            "apelido_revista": revista_json.get("subtitulo"),
+            "numero_edicao": edicao,
+            "codigo_barras": cod_barras,
+            "qtd_estoque": estoque,
+            "preco_capa": preco_c,
+            "preco_liquido": preco_l,
+        })
+    
+    if not revistas_para_inserir:
+        raise HTTPException(status_code=400, detail="Nenhuma revista pôde ser processada com sucesso.")
+
+    try:
+        resposta = supabase_client.table("Revistas").insert(revistas_para_inserir).execute()
+        
+        if resposta.status_code not in [200, 201]:
+             raise HTTPException(status_code=500, detail=f"Falha ao inserir revistas no banco de dados. Status: {resposta.status_code}")
+        
+        return resposta
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Um erro de banco de dados ocorreu: {str(e)}")
+
 
 # Rotas
 @router.post("/cadastrar-chamada")
@@ -59,6 +102,9 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
     )
 
     # Cadastra as revistas no banco
-    cadastro_revistas = cadastrar_revistas(json_arquivo_lido)
+    resposta_cadastro_revistas = cadastrar_revistas(json_arquivo_lido)
 
-    return { "status_upload": resposta_upload.status_code, "status_insert": resposta_insert.status_code }
+    return { "status_upload": resposta_upload.status_code, 
+            "status_insert": resposta_insert.status_code,
+            "status_cadastro_revistas": resposta_cadastro_revistas
+            }
