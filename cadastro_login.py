@@ -2,14 +2,21 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# Carrega as variáveis de ambiente do arquivo .env
-load_dotenv()
+"""
+Scipt básico para gerar token de login ou cadastrar um novo usuário, roda tudo no terminal mesmo...
 
-# Obtém as credenciais do Supabase do ambiente
+1 - Cadastrar usuário:
+    - Precisa verificar o email
+
+2 - Login (Gerar Token):
+    - Email do bryan ta cadastrado, credenciais abaixo, podem usar...
+        bryanamorim8@gmail.com
+        admin123
+"""
+
+load_dotenv()
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_API_KEY")
-
-# Cria o cliente Supabase
 supabase: Client = create_client(url, key)
 
 def registrar_usuario():
@@ -17,7 +24,6 @@ def registrar_usuario():
     email = input("Digite o e-mail para registro: ")
     password = input("Digite a senha para registro: ")
     try:
-        # A função sign_up cria o usuário
         resposta = supabase.auth.sign_up({
             "email": email,
             "password": password,
@@ -33,13 +39,10 @@ def login_usuario():
     email = input("Digite seu e-mail para login: ")
     password = input("Digite sua senha para login: ")
     try:
-        # A função sign_in_with_password autentica o usuário
         resposta = supabase.auth.sign_in_with_password({
             "email": email,
             "password": password,
         })
-        
-        # O token de acesso está dentro do objeto da sessão
         access_token = resposta.session.access_token
         
         print("\nLogin realizado com sucesso!")
