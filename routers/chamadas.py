@@ -5,6 +5,7 @@ from supabase import Client, create_client
 from settings.settings import importar_configs
 from services.auth import validar_token
 from services.ocr import OCRMockado
+from models.chamada_model import Chamada
 
 # Configurações iniciais
 router = APIRouter(
@@ -62,3 +63,28 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
     cadastro_revistas = cadastrar_revistas(json_arquivo_lido)
 
     return { "status_upload": resposta_upload.status_code, "status_insert": resposta_insert.status_code }
+
+@router.get("/{id}", response_model=Chamada)
+async def get_chamada(id: int, user: dict = Depends(validar_token)):
+    """
+    Retorna os dados de uma chamada de devolução pelo ID.
+    """
+    try:
+        resposta = (
+            supabase.table("chamadasdevolucao")
+            .select("*")
+            .eq("id", id)
+            .single()
+            .execute()
+        )
+
+        if not resposta.data:
+            raise HTTPException(status_code=404, detail=f"Chamada {id} não encontrada")
+
+        return resposta.data
+
+    except Exception as e:
+        msg = str(e)
+        if "No rows" in msg or "multiple (or no) rows returned" in msg:
+            raise HTTPException(status_code=404, detail=f"Chamada {id} não encontrada")
+        raise HTTPException(status_code=500, detail=msg)
