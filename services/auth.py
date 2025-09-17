@@ -8,21 +8,25 @@ import jwt
 security = HTTPBearer()
 st = importar_configs()
 
-# Comentado para conseguir fazer os testes necessários
 def validar_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    # token = credentials.credentials
-    # try:
-    #     # Decodifica o token JWT
-    #     payload = jwt.decode(token, st.SUPABASE_JWT, algorithms=["HS256"])
-    #     return payload
-    # except jwt.ExpiredSignatureError:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_401_UNAUTHORIZED,
-    #         detail="Token expirado",
-    #     )
-    # except jwt.InvalidTokenError:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_401_UNAUTHORIZED,
-    #         detail="Token inválido",
-    #     )
-    return
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(
+            token,
+            st.SUPABASE_JWT.strip(),
+            algorithms=["HS256"],
+            audience="authenticated",
+            options={"require": ["exp", "iat", "sub"]},
+        )
+        return payload
+    
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expirado",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido",
+        )
