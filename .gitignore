@@ -1,7 +1,9 @@
 # Arquivo de ambiente virtual
 __pycache__/
 ./venv/
+.venv
 .env
 
 # Arquivos modelo
 json-img1\[1\].txt
+json-img1.json
