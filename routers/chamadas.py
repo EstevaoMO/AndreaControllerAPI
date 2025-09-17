@@ -1,4 +1,3 @@
-# Importe o que for necessário no topo do arquivo
 from fastapi import APIRouter, UploadFile, HTTPException, File, Depends
 from datetime import datetime
 from supabase import Client, create_client
@@ -9,9 +8,9 @@ from settings.settings import importar_configs
 from services.auth import validar_token
 from services.ocr import OCRMockado
 
-# --- Configuração do Router (sugestão de mudança para o plural) ---
+# Configuração do Router
 router = APIRouter(
-    prefix="/chamadas", # Sugestão: "/chamadas" em vez de "/chamada"
+    prefix="/chamadas",
     tags=["Chamada"]
 )
 
@@ -31,16 +30,14 @@ supabase: Client = create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)
 def cadastrar_revistas(chamada):
     pass
 
-# --- Sua rota POST (ajustada para o novo prefixo) ---
-@router.post("/") # Alterado de "/cadastrar-chamada" para "/"
+
+@router.post("/") 
 async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(validar_token)):
-    # ... seu código do POST continua o mesmo aqui ...
-    # ...
-    # ...
+  
     arquivo = await file.read()
     caminho_arquivo = f"{st.BUCKET}/{file.filename}"
     
-    # Envia arquivo para o Supabase Storage
+    # Envia arquivo para o Supabase
     resposta_upload = supabase.storage.from_(st.BUCKET).upload(
         caminho_arquivo,
         arquivo,
@@ -92,7 +89,7 @@ async def listar_chamadas_por_usuario(user: dict = Depends(validar_token)):
             supabase.table("chamadasdevolucao")
             .select("*")  # Seleciona todas as colunas
             .eq("id_usuario", user_id)  # Filtra pelo ID do usuário logado
-            .order("data_limite", desc=True) # Opcional: ordena pela data mais recente
+            .order("data_limite", desc=True) # Ordena pela data mais recente
             .execute()
         )
 
@@ -101,8 +98,8 @@ async def listar_chamadas_por_usuario(user: dict = Depends(validar_token)):
 
     except Exception as e:
         # Tratamento de erro genérico para falhas na comunicação com o banco
-        print(f"Erro ao buscar chamadas no Supabase: {e}") # Logar o erro é uma boa prática
+        print(f"Erro ao buscar chamadas no Supabase: {e}")
         raise HTTPException(
             status_code=500,
             detail="Ocorreu um erro ao buscar as chamadas de devolução."
-        )
+        )  
