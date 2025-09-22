@@ -25,7 +25,7 @@ def pegar_revistas():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
 
-@router.get("/nome")
+@router.get("/buscar/nome")
 def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a(s) revista(s) buscada(s) pelo seu nome ou apelido, utilizando fuzzy search para definir a proximidade do parâmetro de busca com o nome no banco de dados.
@@ -67,7 +67,7 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
     
     return revistas
 
-@router.get("/codigo-barras")
+@router.get("/buscar/codigo-barras")
 def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a revista buscada pelo seu código de barras.
@@ -95,7 +95,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
     
     raise HTTPException(status_code=404, detail="Nenhuma revista encontrada com o código de barras fornecido.")
 
-@router.get("/edicao")
+@router.get("/buscar/edicao")
 def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a revista buscada pelo seu número de edição.
