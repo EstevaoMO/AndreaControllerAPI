@@ -1,18 +1,17 @@
 from fastapi import APIRouter, HTTPException,  Depends
 from supabase import Client, create_client
 
-from models.revista_model import Revista
+from models.revista_model import RevistaResposta
 
 from settings.settings import importar_configs
 from services.auth import validar_token
 
 from rapidfuzz import fuzz
 
-
 # Configurações iniciais
 router = APIRouter(
-    prefix="/busca",
-    tags=["Busca"]
+    prefix="/revistas",
+    tags=["Revistas"]
 )
 
 st = importar_configs()
@@ -50,7 +49,7 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
         
         if max_score >= 70:
             # Considera uma correspondência válida se a similaridade for 70 ou mais e adiciona a revista na lista de resultados
-            revista = Revista(
+            revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
                 apelido_revista=item.get("apelido_revista", ""),
@@ -82,7 +81,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
     for item in dados.data:
         # Busca exata pelo código de barras, removendo espaços em branco com .strip
         if str(item["codigo_barras"]).strip() == str(q).strip():
-            revista = Revista(
+            revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
                 apelido_revista=item.get("apelido_revista", ""),
@@ -111,7 +110,7 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
     for item in dados.data:
         # Busca exata pelo número de edição, removendo espaços em branco com .strip
         if str(item["numero_edicao"]).strip() == str(q).strip():
-            revista = Revista(
+            revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
                 apelido_revista=item.get("apelido_revista", ""),

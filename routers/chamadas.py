@@ -1,17 +1,18 @@
 from fastapi import APIRouter, UploadFile, HTTPException, File, Depends, status
-from datetime import datetime, date
-from supabase import Client, create_client
+from datetime import datetime
+from supabase import Client
 from typing import List, Dict, Any
 import json
 
+from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
-from services.auth import validar_token
+from services.auth import pegar_usuario, pegar_usuario_admin
 from services.ocr import OCRMockado
 
 
 router = APIRouter(
-    prefix="/chamada",
-    tags=["Chamada"]
+    prefix="/chamadas",
+    tags=["Chamadas"]
 )
 
 st = importar_configs()
@@ -22,22 +23,7 @@ URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
 # Usando a chave "service_key" conseguimos essa permissão, mas inserimos como um usuário diferente do usuário logado
 # Por isso, dentro de 'docs', fiz os arquivos serem salvos dentro de uma pasta com o user_id
-def get_supabase_admin_client() -> Client:
-    """Retorna um cliente Supabase com permissões de administrador (service_key)."""
-    return create_client(st.SUPABASE_URL, st.SUPABASE_SERVICE_KEY)
-
-# Valida o Token e devolve o User
-def get_current_user(user: dict = Depends(validar_token)) -> dict:
-    """Valida o token e retorna os dados do usuário."""
-    if not user or "sub" not in user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Token inválido ou não fornecido"
-        )
-    return user
-
-
-def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,id_chamada: int) -> int:
+def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client, id_chamada: int) -> int:
     """
     Processa os dados das revistas do JSON e os insere em lote na tabela 'revistas'.
     Retorna a quantidade de revistas inseridas com sucesso.
@@ -80,7 +66,7 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
 
 
 @router.post("/cadastrar-chamada", status_code=status.HTTP_201_CREATED)
-async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(get_current_user),supabase_admin: Client = Depends(get_supabase_admin_client)):
+async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(pegar_usuario), supabase_admin: Client = Depends(pegar_usuario_admin)):
 
     """
     Recebe um ARQUIVO JSON, salva-o no storage, interpreta seu conteúdo
@@ -139,7 +125,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(g
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao registrar a chamada no banco de dados: {e}")
 
 
-# AQUI ELE CADASTRA AS REVISTAS
+    # AQUI ELE CADASTRA AS REVISTAS
     revistas_inseridas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
     
     return {
@@ -149,8 +135,8 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(g
         "qtd_revistas_cadastradas": revistas_inseridas
     }
 
-@router.get("/")
-async def listar_chamadas_por_usuario(user: dict = Depends(get_current_user),supabase_admin: Client = Depends(get_supabase_admin_client) ) -> List[Dict[str, Any]]:
+@router.get("/listar-chamadas-usuario")
+async def listar_chamadas_por_usuario(user: dict = Depends(pegar_usuario), supabase_admin: Client = Depends(pegar_usuario_admin)) -> List[ChamadaDevolucaoResposta]:
     """
     Lista todas as chamadas de devolução associadas ao usuário autenticado.
     """
@@ -169,4 +155,3 @@ async def listar_chamadas_por_usuario(user: dict = Depends(get_current_user),sup
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocorreu um erro ao buscar as chamadas de devolução."
         )
-
