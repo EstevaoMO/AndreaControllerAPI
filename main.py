@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routers import chamadas, revista
+from routers import chamadas, revistas
 
 # Configurações iniciais
 app = FastAPI(
@@ -18,4 +18,4 @@ def ping():
 
 # Outras rotas
 app.include_router(chamadas.router)
-app.include_router(revista.router)
+app.include_router(revistas.router)

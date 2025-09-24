@@ -8,6 +8,7 @@ from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import pegar_usuario, pegar_usuario_admin
 from services.ocr import OCRMockado
+from models.chamada_model import ChamadaDevolucaoResposta
 
 
 router = APIRouter(
@@ -120,7 +121,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(p
         chamada_criada = resposta_insert.data[0]
         id_chamada_criada = chamada_criada['id_chamada_devolucao']
     except (KeyError, TypeError):
-         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A estrutura do JSON dentro do arquivo está incorreta.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A estrutura do JSON dentro do arquivo está incorreta.")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao registrar a chamada no banco de dados: {e}")
 
@@ -155,3 +156,27 @@ async def listar_chamadas_por_usuario(user: dict = Depends(pegar_usuario), supab
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocorreu um erro ao buscar as chamadas de devolução."
         )
+@router.get("/{id}", response_model=ChamadaDevolucaoResposta)
+async def get_chamada_por_id(id: int, user: dict = Depends(pegar_usuario), supabase_admin: Client = Depends(pegar_usuario_admin)) -> List[ChamadaDevolucaoResposta]:
+    """
+    Retorna os dados de uma chamada de devolução pelo ID.
+    """
+    try:
+        resposta = (
+            supabase_admin.table("chamadasdevolucao")
+            .select("*")
+            .eq("id", id)
+            .single()
+            .execute()
+        )
+
+        if not resposta.data:
+            raise HTTPException(status_code=404, detail=f"Chamada {id} não encontrada")
+
+        return resposta.data
+
+    except Exception as e:
+        msg = str(e)
+        if "No rows" in msg or "multiple (or no) rows returned" in msg:
+            raise HTTPException(status_code=404, detail=f"Chamada {id} não encontrada")
+        raise HTTPException(status_code=500, detail=msg)
