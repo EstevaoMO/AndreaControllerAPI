@@ -8,7 +8,7 @@ from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import pegar_usuario, pegar_usuario_admin
 from services.ocr import OCRMockado
-from models.chamada_model import Chamada
+from models.chamada_model import ChamadaDevolucaoResposta
 
 
 router = APIRouter(
@@ -156,7 +156,7 @@ async def listar_chamadas_por_usuario(user: dict = Depends(pegar_usuario), supab
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocorreu um erro ao buscar as chamadas de devolução."
         )
-@router.get("/{id}", response_model=Chamada)
+@router.get("/{id}", response_model=ChamadaDevolucaoResposta)
 async def get_chamada_por_id(id: int, user: dict = Depends(pegar_usuario), supabase_admin: Client = Depends(pegar_usuario_admin)) -> List[ChamadaDevolucaoResposta]:
     """
     Retorna os dados de uma chamada de devolução pelo ID.
