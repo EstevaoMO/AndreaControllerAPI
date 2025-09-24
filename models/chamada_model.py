@@ -1,16 +1,10 @@
-# models/chamada.py
 from pydantic import BaseModel
-from datetime import date
-from typing import Optional
+from datetime import datetime
 
-class Chamada(BaseModel):
-    id: int  # troque para str se a tabela usar UUID
-    id_usuario: str
-    ponto_venda_id: str
-    data_limite: date
+class ChamadaDevolucaoResposta(BaseModel):
+    id: int
+    id_usuario: int
+    ponto_venda_id: int
+    data_limite: datetime
     url_documento: str
     status: str
-    created_at: Optional[date] = None
-
-    class Config:
-        from_attributes = True  # compatível com dict/ORM-like

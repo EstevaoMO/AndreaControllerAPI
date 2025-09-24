@@ -1,18 +1,17 @@
 from fastapi import APIRouter, HTTPException,  Depends
 from supabase import Client, create_client
 
-from models.revista_model import Revista
+from models.revista_model import RevistaResposta
 
 from settings.settings import importar_configs
 from services.auth import validar_token
 
 from rapidfuzz import fuzz
 
-
 # Configurações iniciais
 router = APIRouter(
-    prefix="/busca",
-    tags=["Busca"]
+    prefix="/revistas",
+    tags=["Revistas"]
 )
 
 st = importar_configs()
@@ -26,7 +25,7 @@ def pegar_revistas():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
 
-@router.get("/nome")
+@router.get("/buscar/nome")
 def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a(s) revista(s) buscada(s) pelo seu nome ou apelido, utilizando fuzzy search para definir a proximidade do parâmetro de busca com o nome no banco de dados.
@@ -50,7 +49,7 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
         
         if max_score >= 70:
             # Considera uma correspondência válida se a similaridade for 70 ou mais e adiciona a revista na lista de resultados
-            revista = Revista(
+            revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
                 apelido_revista=item.get("apelido_revista", ""),
@@ -68,7 +67,7 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
     
     return revistas
 
-@router.get("/codigo-barras")
+@router.get("/buscar/codigo-barras")
 def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a revista buscada pelo seu código de barras.
@@ -82,7 +81,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
     for item in dados.data:
         # Busca exata pelo código de barras, removendo espaços em branco com .strip
         if str(item["codigo_barras"]).strip() == str(q).strip():
-            revista = Revista(
+            revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
                 apelido_revista=item.get("apelido_revista", ""),
@@ -96,7 +95,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
     
     raise HTTPException(status_code=404, detail="Nenhuma revista encontrada com o código de barras fornecido.")
 
-@router.get("/edicao")
+@router.get("/buscar/edicao")
 def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a revista buscada pelo seu número de edição.
@@ -111,7 +110,7 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
     for item in dados.data:
         # Busca exata pelo número de edição, removendo espaços em branco com .strip
         if str(item["numero_edicao"]).strip() == str(q).strip():
-            revista = Revista(
+            revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
                 apelido_revista=item.get("apelido_revista", ""),
