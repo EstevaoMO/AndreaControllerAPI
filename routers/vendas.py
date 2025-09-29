@@ -36,6 +36,17 @@ def pegar_relatorio_dia(user = Depends(validar_token)):
             detail=f"Algo de errado aconteceu: {str(e)}"    
         )
 
+@router.get("/hoje")
+def pegar_hoje(user = Depends(validar_token)):
+    try:
+        vendas_hoje = supabase.table("vw_vendas_hoje").select("*").execute()
+        return vendas_hoje.data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"    
+        )
+
 @router.post("/cadastrar-venda-por-codigo")
 def cadastrar_venda_codigo(venda: VendaFormularioCodBarras, user: dict = Depends(validar_token)):
     """
@@ -122,30 +133,8 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
 
 
 # =============== RELTARÓIOS ===============
-@router.get("/relatorio-dia")
-def pegar_relatorio_dia(user = Depends(validar_token)):
-    try:
-        vendas_hoje = supabase.table("vw_vendas_hoje").select("*").execute()
-        return vendas_hoje.data
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Algo de errado aconteceu: {str(e)}"    
-        )
-
 @router.get("/relatorio-semana")
 def pegar_relatorio_semana(user = Depends(validar_token)):
-    try:
-        vendas_hoje = supabase.table("mv_performance_semanal").select("*").execute()
-        return vendas_hoje.data
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Algo de errado aconteceu: {str(e)}"    
-        )
-
-@router.get("/relatorio-semana")
-def pegar_relatorio_dia(user = Depends(validar_token)):
     try:
         vendas_semana = supabase.table("mv_performance_semanal").select("*").execute()
         return vendas_semana.data
