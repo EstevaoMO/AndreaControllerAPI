@@ -7,7 +7,7 @@ import json
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
-from services.ocr import OCRMockado
+
 
 
 router = APIRouter(
