@@ -6,7 +6,7 @@ import json
 
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
-from services.auth import pegar_usuario, pegar_usuario_admin
+from services.auth import validar_token, pegar_usuario_admin
 from services.ocr import OCRMockado
 
 
@@ -66,8 +66,7 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
 
 
 @router.post("/cadastrar-chamada", status_code=status.HTTP_201_CREATED)
-async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(pegar_usuario), supabase_admin: Client = Depends(pegar_usuario_admin)):
-
+async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
     """
     Recebe um ARQUIVO JSON, salva-o no storage, interpreta seu conteúdo
     e insere os dados da chamada e das revistas no banco.
@@ -136,7 +135,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(p
     }
 
 @router.get("/listar-chamadas-usuario")
-async def listar_chamadas_por_usuario(user: dict = Depends(pegar_usuario), supabase_admin: Client = Depends(pegar_usuario_admin)) -> List[ChamadaDevolucaoResposta]:
+async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)) -> List[ChamadaDevolucaoResposta]:
     """
     Lista todas as chamadas de devolução associadas ao usuário autenticado.
     """

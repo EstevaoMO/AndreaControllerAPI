@@ -31,7 +31,7 @@ def validar_token(credentials: HTTPAuthorizationCredentials = Depends(security))
         )
 
 # Valida o Token e devolve o User
-def pegar_usuario(user: dict = Depends(validar_token)) -> dict:
+def pegar_usuario(user: dict = Depends(validar_token)):
     """Valida o token e retorna os dados do usuário."""
     if not user or "sub" not in user:
         raise HTTPException(
