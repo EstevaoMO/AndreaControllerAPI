@@ -17,9 +17,24 @@ router = APIRouter(
 st = importar_configs()
 supabase: Client = create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)
 
-@router.get("/relatorio")
-def pegar_relatorio(user = Depends(validar_token)):
-    pass
+@router.get("/tudo")
+def pegar_vendas(user = Depends(validar_token)):
+    try:
+        dados = supabase.table("vendas").select("id_venda, id_usuario, id_produto, metodo_pagamento, qtd_vendida, desconto_aplicado, valor_total, data_venda").execute()
+        return dados.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
+
+@router.get("/recentes")
+def pegar_relatorio_dia(user = Depends(validar_token)):
+    try:
+        recentes = supabase.table("vw_vendas_recentes").select("*").execute()
+        return recentes.data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"    
+        )
 
 @router.post("/cadastrar-venda-por-codigo")
 def cadastrar_venda_codigo(venda: VendaFormularioCodBarras, user: dict = Depends(validar_token)):
@@ -103,4 +118,39 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro ao cadastrar a venda no banco."
+        )
+
+
+# =============== RELTARÓIOS ===============
+@router.get("/relatorio-dia")
+def pegar_relatorio_dia(user = Depends(validar_token)):
+    try:
+        vendas_hoje = supabase.table("vw_vendas_hoje").select("*").execute()
+        return vendas_hoje.data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"    
+        )
+
+@router.get("/relatorio-semana")
+def pegar_relatorio_semana(user = Depends(validar_token)):
+    try:
+        vendas_hoje = supabase.table("mv_performance_semanal").select("*").execute()
+        return vendas_hoje.data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"    
+        )
+
+@router.get("/relatorio-semana")
+def pegar_relatorio_dia(user = Depends(validar_token)):
+    try:
+        vendas_semana = supabase.table("mv_performance_semanal").select("*").execute()
+        return vendas_semana.data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"    
         )
