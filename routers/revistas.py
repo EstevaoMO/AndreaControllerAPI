@@ -25,6 +25,10 @@ def pegar_revistas():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
 
+@router.get("/tudo")
+def pegar_tudo(user = Depends(validar_token)):
+    return pegar_revistas().data
+
 @router.get("/buscar/nome")
 def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_token)):
     """
