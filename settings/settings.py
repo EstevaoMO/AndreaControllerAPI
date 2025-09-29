@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     SUPABASE_JWT: str
     BUCKET: str
     SUPABASE_SERVICE_KEY: str
-    OPENROUTER_API: str
 
     class Config:
         env_file = ".env"

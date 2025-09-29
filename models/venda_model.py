@@ -8,9 +8,17 @@ class MetodoPagamentoEnum(str, Enum):
     dinheiro = "Dinheiro"
     pix = "Pix"
 
-class VendaFormulario(BaseModel):
+class VendaFormularioCodBarras(BaseModel):
     metodo_pagamento: MetodoPagamentoEnum
-    codigo_barras: int
+    codigo_barras: str
+    qtd_vendida: int
+    desconto_aplicado: float
+    valor_total: float
+    data_venda: datetime
+
+class VendaFormularioId(BaseModel):
+    id_revista: int
+    metodo_pagamento: MetodoPagamentoEnum
     qtd_vendida: int
     desconto_aplicado: float
     valor_total: float

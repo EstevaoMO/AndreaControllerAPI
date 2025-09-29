@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException,  Depends
+from fastapi import APIRouter, HTTPException, status, Depends
 from supabase import Client, create_client
 
 from models.revista_model import RevistaResposta
@@ -38,7 +38,7 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
     dados = pegar_revistas()
         
     if not dados.data:
-        raise HTTPException(status_code=404, detail="Nenhuma revista encontrada no banco de dados.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
     revistas = []
     for item in dados.data:
@@ -80,7 +80,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
     dados = pegar_revistas()
         
     if not dados.data:
-        raise HTTPException(status_code=404, detail="Nenhuma revista encontrada no banco de dados.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
     for item in dados.data:
         # Busca exata pelo código de barras, removendo espaços em branco com .strip
@@ -97,7 +97,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
             )
             return revista
     
-    raise HTTPException(status_code=404, detail="Nenhuma revista encontrada com o código de barras fornecido.")
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o código de barras fornecido.")
 
 @router.get("/buscar/edicao")
 def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
@@ -108,7 +108,7 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
     dados = pegar_revistas()
         
     if not dados.data:
-        raise HTTPException(status_code=404, detail="Nenhuma revista encontrada no banco de dados.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
     revistas = []
     for item in dados.data:
@@ -127,6 +127,6 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
             revistas.append(revista) # Como mais de uma revista pode ter a mesma edição, adiciona na lista
     
     if not revistas:
-        raise HTTPException(status_code=404, detail="Nenhuma revista encontrada com o número de edição fornecido.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o número de edição fornecido.")
     
     return revistas
