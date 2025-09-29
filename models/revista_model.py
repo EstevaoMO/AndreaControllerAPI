@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-class Revista(BaseModel):
+class RevistaResposta(BaseModel):
     id_revista: int
     nome: str
     apelido_revista: str | None = None
