@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Depends
 from supabase import Client, create_client
 
 from models.revista_model import RevistaResposta
@@ -130,3 +130,31 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o número de edição fornecido.")
     
     return revistas
+
+@router.post("/cadastrar-foto")
+async def upload_image(codigo: int, imagem: UploadFile = File(...), user: dict = Depends(validar_token)):
+    # Crie um nome pardonizado para a imagem
+    extensao = imagem.filename.split('.')[-1] if '.' in imagem.filename else 'jpg'
+    caminho = f"img_{codigo}.{extensao}"
+    file_bytes = await imagem.read()
+    
+    try:
+        supabase.storage.from_(st.BUCKET_REVISTAS).upload(
+            path=caminho, 
+            file=file_bytes,
+            file_options={"content-type": imagem.content_type or "image/jpeg"})
+        url = supabase.storage.from_(st.BUCKET_REVISTAS).get_public_url(caminho)
+
+        # Atualizar a URL na tabela
+        response = supabase.table("revistas").update({
+            'url_revista': url
+        }).eq('codigo_barras', codigo).execute()
+        
+        return {
+            "caminho_bucket": caminho,
+            "url": url,
+            "database_updated": len(response.data) > 0,
+            "message": "Imagem enviada e banco atualizado com sucesso"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao salvar o arquivo: {e}")
