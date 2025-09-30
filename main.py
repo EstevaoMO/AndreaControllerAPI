@@ -21,8 +21,18 @@ def home():
 
 @app.get("/ping")
 def ping():
-    supabase = create_client(s)
-    return { "ping": "pong!" }
+    try:
+        con = pegar_usuario_admin()
+        if con:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content="Pong!"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_BAD_REQUEST,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
 
 @app.head("/ping", status_code=status.HTTP_200_OK)
 def ping():
