@@ -1,10 +1,13 @@
-from pydantic import BaseModel
-from datetime import datetime
+from pydantic import BaseModel, Field, ConfigDict
+from datetime import date
 
 class ChamadaDevolucaoResposta(BaseModel):
-    id: int
-    id_usuario: int
-    ponto_venda_id: int
-    data_limite: datetime
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int = Field(alias="id_chamada_devolucao")
+
+    id_usuario: str          
+    ponto_venda_id: str      
+    data_limite: date        
     url_documento: str
     status: str

@@ -1,10 +1,12 @@
-from fastapi import APIRouter, UploadFile, HTTPException, File, Depends, status
-from datetime import datetime
+from fastapi import APIRouter, UploadFile, HTTPException, File, Depends, status, Query
+from datetime import datetime, time, timezone, timedelta
 from supabase import Client
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from datetime import date
 import json
 
 from models.chamada_model import ChamadaDevolucaoResposta
+from models.alerta_chamada import AlertaChamada
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
 
@@ -18,6 +20,25 @@ router = APIRouter(
 st = importar_configs()
 URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60 
 
+def _as_date(value) -> Optional[date]:
+    """Converte datetime/ISO/date (como o Supabase pode devolver) para date."""
+    if value is None:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        # tenta ISO completo (com ou sem 'Z')
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+        except Exception:
+            # tenta apenas YYYY-MM-DD
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except Exception:
+                return None
+    return None
 
 # Permissão de Admin para colocar arquivo no bucket
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
@@ -154,8 +175,76 @@ async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supab
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocorreu um erro ao buscar as chamadas de devolução."
         )
+
+@router.get("/alertas",response_model=List[AlertaChamada],summary="Alertas de chamadas com data_limite em ≤ N dias")
+async def listar_alertas_chamadas(
+    dias: int = Query(5, ge=0, le=60, description="Janela a partir de hoje (padrão=5)"),
+    incluir_vencidas: bool = Query(
+        True, description="Se True, inclui itens já vencidos (ex.: venceu no sábado, avisa na segunda)."
+    ),
+    user: dict = Depends(validar_token),
+    supabase_admin: Client = Depends(pegar_usuario_admin),
+):
+    """
+    Regra:
+    - incluir_vencidas=True  -> traz tudo com data_limite <= hoje+N (inclui atrasadas)
+    - incluir_vencidas=False -> apenas hoje <= data_limite <= hoje+N
+    Sempre filtrando pelo usuário autenticado.
+    """
+    hoje = date.today()
+    limite = hoje + timedelta(days=dias)
+    today_str = hoje.strftime("%Y-%m-%d")
+    limit_str = limite.strftime("%Y-%m-%d")
+
+    try:
+        q = (
+            supabase_admin
+            .table("chamadasdevolucao")
+            .select("id_chamada_devolucao,data_limite,status")
+        )
+
+        if incluir_vencidas:
+            # Compatível com coluna DATE
+            q = q.lte("data_limite", limit_str)
+        else:
+            q = q.gte("data_limite", today_str).lte("data_limite", limit_str)
+
+        q = q.order("data_limite", desc=False)
+        resp = q.execute()
+        rows = resp.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao consultar Supabase: {e!s}")
+
+    saida: List[AlertaChamada] = []
+
+    for r in rows:
+        enc = _as_date(r.get("data_limite"))
+        if enc is None:
+            continue
+
+        # Guarda de segurança (se o PostgREST devolver algo fora do range por TZ)
+        if incluir_vencidas:
+            if enc > limite:
+                continue
+        else:
+            if enc < hoje or enc > limite:
+                continue
+
+        dias_restantes = (enc - hoje).days
+
+        saida.append(
+            AlertaChamada(
+                id=int(r["id_chamada_devolucao"]),  # ajuste se sua PK não for 'id'
+                data_limite=enc,
+                dias_restantes=dias_restantes,
+                status=r.get("status", "")
+            )
+        )
+
+    return saida
+
 @router.get("/{id}", response_model=ChamadaDevolucaoResposta)
-async def get_chamada_por_id(id: int, user: dict = Depends(pegar_usuario), supabase_admin: Client = Depends(pegar_usuario_admin)) -> List[ChamadaDevolucaoResposta]:
+async def get_chamada_por_id(id: int, user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)) -> ChamadaDevolucaoResposta:
     """
     Retorna os dados de uma chamada de devolução pelo ID.
     """
@@ -163,7 +252,7 @@ async def get_chamada_por_id(id: int, user: dict = Depends(pegar_usuario), supab
         resposta = (
             supabase_admin.table("chamadasdevolucao")
             .select("*")
-            .eq("id", id)
+            .eq("id_chamada_devolucao", id)
             .single()
             .execute()
         )
@@ -178,3 +267,4 @@ async def get_chamada_por_id(id: int, user: dict = Depends(pegar_usuario), supab
         if "No rows" in msg or "multiple (or no) rows returned" in msg:
             raise HTTPException(status_code=404, detail=f"Chamada {id} não encontrada")
         raise HTTPException(status_code=500, detail=msg)
+    
