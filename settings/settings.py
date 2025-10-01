@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     SUPABASE_API_KEY: str
     SUPABASE_JWT: str
     BUCKET: str
+    API_KEY: str
+    MODEL_NAME: str
 
     class Config:
         env_file = ".env"

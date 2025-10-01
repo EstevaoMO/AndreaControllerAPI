@@ -1,6 +1,5 @@
 from fastapi import FastAPI, status, HTTPException
 from fastapi.responses import JSONResponse
-from supabase import create_client
 from routers import chamadas, revistas, vendas
 
 from settings.settings import importar_configs

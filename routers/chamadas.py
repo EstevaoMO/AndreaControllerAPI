@@ -7,6 +7,7 @@ import json
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
+from services.extracao import processar_pdf_para_json
 
 
 
@@ -36,15 +37,15 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
 
     for revista_data in lista_revistas_json:
         try:
-            preco_capa_str = str(revista_data.get("pco_capa", "0.0")).replace(',', '.')
-            preco_liq_str = str(revista_data.get("pco_liq", "0.0")).replace(',', '.')
+            preco_capa_str = str(revista_data.get("preco_capa", "0.0")).replace(',', '.')
+            preco_liq_str = str(revista_data.get("preco_liquido", "0.0")).replace(',', '.')
             
             revistas_para_inserir.append({
-                "nome": revista_data.get("produto"),
-                "apelido_revista": revista_data.get("subtitulo"),
-                "numero_edicao": int(revista_data.get("edicao", 0)),
-                "codigo_barras": str(revista_data.get("ean", "")).strip(),
-                "qtd_estoque": int(revista_data.get("rep") or 0),
+                "nome": revista_data.get("nome"),
+                "apelido_revista": revista_data.get("apelido_revista"),
+                "numero_edicao": int(revista_data.get("numero_edicao", 0)),
+                "codigo_barras": str(revista_data.get("codigo_barras", "")).strip(),
+                "qtd_estoque": int(revista_data.get("qtd_estoque") or 0),
                 "preco_capa": float(preco_capa_str),
                 "preco_liquido": float(preco_liq_str),
             })
@@ -61,7 +62,7 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ocorreu um erro de banco de dados ao inserir as revistas: {e}"
+            detail=f"Ocorreu um erro de banco de dados ao inserir as revistas: {str(e)}"
         )
 
 
@@ -76,14 +77,14 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado está vazio.")
     
     try:
-        chamada_json = json.loads(arquivo_bytes)
+        chamada_json = processar_pdf_para_json(arquivo_bytes)
     except json.JSONDecodeError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado não contém um JSON válido.")
 
-    if "chamada_encalhe" not in chamada_json:
+    if "chamadasdevolucao" not in chamada_json:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O conteúdo do JSON é inválido. A chave 'chamada_encalhe' é obrigatória."
+            detail="O conteúdo do JSON é inválido. A chave 'chamadasdevolucao' é obrigatória."
         )
 
 
@@ -106,22 +107,51 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
             raise ValueError("A resposta da URL assinada não contém a chave 'signedURL'.")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao gerar URL para o documento: {e}")
-    
+
     try:
+        cd = chamada_json.get("chamadasdevolucao")
+        if cd is None:
+            raise KeyError("chamadasdevolucao")
+
+        # campos esperados que você quer extrair
+        pv_id = cd.get("ponto_venda_id")
+        dl = cd.get("data_limite")
+
+        missing = []
+        if pv_id is None:
+            missing.append("ponto_venda_id")
+        if dl is None:
+            missing.append("data_limite")
+
+        if missing:
+            raise KeyError(f"Campos faltando em chamadasdevolucao: {missing}")
+
+        # Verifica tipo/valor de data_limite
+        try:
+            data_limite_dt = datetime.strptime(dl, "%Y-%m-%d")
+        except Exception as e:
+            raise ValueError(f"Formato inválido para data_limite: {dl}. Erro: {e}")
+
         dados_chamada = {
             "id_usuario": user["sub"],
-            "ponto_venda_id": chamada_json["chamada_encalhe"]["ponto"],
-            "data_limite": datetime.strptime(chamada_json["chamada_encalhe"]["data_da_chamada"], "%d/%m/%Y").strftime("%Y-%m-%d"),
+            "ponto_venda_id": chamada_json["chamadasdevolucao"]["ponto_venda_id"],
+            "data_limite": datetime.strptime(
+                chamada_json["chamadasdevolucao"]["data_limite"], "%Y-%m-%d"
+            ).date().isoformat(),
             "url_documento": url_assinada,
             "status": "aberta"
         }
+
         resposta_insert = supabase_admin.table("chamadasdevolucao").insert(dados_chamada).execute()
         chamada_criada = resposta_insert.data[0]
-        id_chamada_criada = chamada_criada['id_chamada_devolucao']
-    except (KeyError, TypeError):
-         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A estrutura do JSON dentro do arquivo está incorreta.")
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao registrar a chamada no banco de dados: {e}")
+        id_chamada_criada = chamada_criada["id_chamada_devolucao"]
+
+    except KeyError as e:
+        detail = f"Chave ausente no JSON: {e}"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+    except ValueError as e:
+        detail = f"Valor inválido no JSON: {e}"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
     # AQUI ELE CADASTRA AS REVISTAS
