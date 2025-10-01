@@ -26,7 +26,10 @@ def ping():
         if con:
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
-                content="Pong!"
+                content={
+                    "data": "Pong!",
+                    "message": "Conexão com o banco de dados bem-sucedida."
+                }
             )
     except Exception as e:
         raise HTTPException(
@@ -41,7 +44,10 @@ def ping():
         if con:
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
-                content="Pong!"
+                content={
+                    "data": "Pong!",
+                    "message": "Conexão com o banco de dados bem-sucedida."
+                }
             )
     except Exception as e:
         raise HTTPException(
