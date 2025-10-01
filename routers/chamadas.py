@@ -167,7 +167,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
     }
 
 @router.get("/listar-chamadas-usuario")
-async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)) -> List[ChamadaDevolucaoResposta]:
+async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
     """
     Lista todas as chamadas de devolução associadas ao usuário autenticado.
     """
