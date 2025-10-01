@@ -21,7 +21,10 @@ supabase: Client = create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)
 def pegar_vendas(user = Depends(validar_token)):
     try:
         dados = supabase.table("vendas").select("id_venda, id_usuario, id_produto, metodo_pagamento, qtd_vendida, desconto_aplicado, valor_total, data_venda").execute()
-        return dados.data
+        return {
+            "data": dados.data,
+            "message": "Vendas listadas com sucesso."
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
 
@@ -29,7 +32,10 @@ def pegar_vendas(user = Depends(validar_token)):
 def pegar_relatorio_dia(user = Depends(validar_token)):
     try:
         recentes = supabase.table("vw_vendas_recentes").select("*").execute()
-        return recentes.data
+        return {
+            "data": recentes.data,
+            "message": "Relatório de vendas recentes gerado com sucesso."
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -40,7 +46,10 @@ def pegar_relatorio_dia(user = Depends(validar_token)):
 def pegar_hoje(user = Depends(validar_token)):
     try:
         vendas_hoje = supabase.table("vw_vendas_hoje").select("*").execute()
-        return vendas_hoje.data
+        return {
+            "data": vendas_hoje.data,
+            "message": "Vendas de hoje listadas com sucesso."
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -85,7 +94,10 @@ def cadastrar_venda_codigo(venda: VendaFormularioCodBarras, user: dict = Depends
     if resposta_insert.data:
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={"mensagem": "Venda cadastrada com sucesso!"}
+            content={
+                "data": None,
+                "message": "Venda cadastrada com sucesso!"
+            }
         )
     else:
         raise HTTPException(
@@ -123,7 +135,10 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
     if resposta_insert.data:
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={"mensagem": "Venda cadastrada com sucesso!"}
+            content={
+                "data": None,
+                "message": "Venda cadastrada com sucesso!"
+            }
         )
     else:
         raise HTTPException(
@@ -137,7 +152,10 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
 def pegar_relatorio_semana(user = Depends(validar_token)):
     try:
         vendas_semana = supabase.table("mv_performance_semanal").select("*").execute()
-        return vendas_semana.data
+        return {
+            "data": vendas_semana.data,
+            "message": "Relatório semanal de vendas gerado com sucesso."
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

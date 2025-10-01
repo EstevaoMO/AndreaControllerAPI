@@ -158,10 +158,12 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
     revistas_inseridas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
     
     return {
-        "mensagem": "Chamada criada e revistas cadastradas com sucesso.",
-        "id_chamada": id_chamada_criada,
-        "url_documento": url_assinada,
-        "qtd_revistas_cadastradas": revistas_inseridas
+        "data": {
+            "id_chamada": id_chamada_criada,
+            "url_documento": url_assinada,
+            "qtd_revistas_cadastradas": revistas_inseridas
+        },
+        "message": "Chamada criada e revistas cadastradas com sucesso."
     }
 
 @router.get("/listar-chamadas-usuario")
@@ -177,7 +179,10 @@ async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supab
             .order("data_limite", desc=True)
             .execute()
         )
-        return resposta.data
+        return {
+            "data": resposta.data,
+            "message": "Chamadas do usuário listadas com sucesso."
+        }
     except Exception as e:
         print(f"Erro ao buscar chamadas no Supabase: {e}")
         raise HTTPException(

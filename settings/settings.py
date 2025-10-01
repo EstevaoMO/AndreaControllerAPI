@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     BUCKET: str
     API_KEY: str
     MODEL_NAME: str
+    BUCKET_REVISTAS: str
 
     class Config:
         env_file = ".env"
