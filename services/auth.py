@@ -30,8 +30,7 @@ def validar_token(credentials: HTTPAuthorizationCredentials = Depends(security))
             detail="Token inválido",
         )
 
-# Valida o Token e devolve o User
-def pegar_usuario(user: dict = Depends(validar_token)) -> dict:
+def pegar_usuario(user: dict = Depends(validar_token)):
     """Valida o token e retorna os dados do usuário."""
     if not user or "sub" not in user:
         raise HTTPException(
@@ -41,5 +40,5 @@ def pegar_usuario(user: dict = Depends(validar_token)) -> dict:
     return user
 
 def pegar_usuario_admin() -> Client:
-    """Retorna um cliente Supabase com permissões de administrador (service_key)."""
-    return create_client(st.SUPABASE_URL, st.SUPABASE_SERVICE_KEY)
+    """Retorna um cliente Supabase com permissões de administrador."""
+    return create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)

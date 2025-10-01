@@ -7,3 +7,6 @@ __pycache__/
 # Arquivos modelo
 json-img1\[1\].txt
 json-img1.json
+
+# Arquivos de teste/temporários
+tmp/
