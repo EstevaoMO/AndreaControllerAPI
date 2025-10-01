@@ -27,7 +27,10 @@ def pegar_revistas():
 
 @router.get("/tudo")
 def pegar_tudo(user = Depends(validar_token)):
-    return pegar_revistas().data
+    return {
+        "data": pegar_revistas().data,
+        "message": "Revistas listadas com sucesso."
+    }
 
 @router.get("/buscar/nome")
 def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_token)):
@@ -69,7 +72,10 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
     if not revistas:
         raise HTTPException(status_code=404, detail="Nenhuma revista encontrada com o nome fornecido.")
     
-    return revistas
+    return {
+        "data": revistas,
+        "message": "Revistas encontradas com sucesso."
+    }
 
 @router.get("/buscar/codigo-barras")
 def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token)):
@@ -95,7 +101,10 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
                 preco_capa=item["preco_capa"],
                 preco_liquido=item["preco_liquido"]
             )
-            return revista
+            return {
+                "data": revista,
+                "message": "Revista encontrada com sucesso."
+            }
     
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o código de barras fornecido.")
 
@@ -129,11 +138,13 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
     if not revistas:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o número de edição fornecido.")
     
-    return revistas
+    return {
+        "data": revistas,
+        "message": "Revistas encontradas com sucesso."
+    }
 
 @router.post("/cadastrar-foto")
 async def upload_image(codigo: int, imagem: UploadFile = File(...), user: dict = Depends(validar_token)):
-    # Crie um nome pardonizado para a imagem
     extensao = imagem.filename.split('.')[-1] if '.' in imagem.filename else 'jpg'
     caminho = f"img_{codigo}.{extensao}"
     file_bytes = await imagem.read()
@@ -151,9 +162,11 @@ async def upload_image(codigo: int, imagem: UploadFile = File(...), user: dict =
         }).eq('codigo_barras', codigo).execute()
         
         return {
-            "caminho_bucket": caminho,
-            "url": url,
-            "database_updated": len(response.data) > 0,
+            "data": {
+                "caminho_bucket": caminho,
+                "url": url,
+                "database_updated": len(response.data) > 0,
+            },
             "message": "Imagem enviada e banco atualizado com sucesso"
         }
     except Exception as e:
