@@ -4,12 +4,22 @@ from routers import chamadas, revistas, vendas
 
 from settings.settings import importar_configs
 from services.auth import pegar_usuario_admin
+from fastapi.middleware.cors import CORSMiddleware
 
 # Configurações iniciais
 app = FastAPI(
     title="AndreaController API's Swagger",
     tags=["Global"]
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 st = importar_configs()
 
