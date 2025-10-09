@@ -63,7 +63,7 @@ REGRAS:
 - ATENÇÃO: a coluna *preco_capa* e *preco_liquido* são SEMPRE valores monetários com DUAS casas decimais (ex.: 6.99, 13.90, 213.90).
 - ATENÇÃO: a coluna *preco_capa* pode ser 0,00, desde que o *preco_liquido* também seja 0,00.
 - NUNCA confunda quantidade (inteiro) com preço (decimal).
-- Se no texto houver dúvida, priorize: 
+- Se no texto houver dúvida, priorize:
     - qtd_estoque deve ser inteiro entre 0 e 9999
     - preco_capa e preco_liquido devem ser decimais com vírgula → ponto.
 - Una linhas quebradas de um mesmo produto antes de montar o registro.
@@ -126,9 +126,9 @@ def parse_json_resposta(s: str) -> dict:
         raise ValueError(f"Resposta não é JSON válido.\nErro: {e}\nTrecho inicial:\n{trecho}\n")
     if not isinstance(data, dict) or "chamadasdevolucao" not in data or "revistas" not in data:
         raise ValueError("JSON não contém as chaves necessárias: 'chamadasdevolucao' e 'revistas'.")
-    
+
     return normalizar_tipos(data)
-    
+
 # Função de extração
 def processar_pdf_para_json(file_bytes: bytes) -> dict:
     """
@@ -142,3 +142,4 @@ def processar_pdf_para_json(file_bytes: bytes) -> dict:
     dados = parse_json_resposta(resposta)
     print(dados)
     return dados
+

@@ -17,7 +17,7 @@ router = APIRouter(
 )
 
 st = importar_configs()
-URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60 
+URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60
 
 
 # Permissão de Admin para colocar arquivo no bucket
@@ -39,7 +39,7 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
         try:
             preco_capa_str = str(revista_data.get("preco_capa", "0.0")).replace(',', '.')
             preco_liq_str = str(revista_data.get("preco_liquido", "0.0")).replace(',', '.')
-            
+
             revistas_para_inserir.append({
                 "nome": revista_data.get("nome"),
                 "apelido_revista": revista_data.get("apelido_revista"),
@@ -75,7 +75,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
     arquivo_bytes = await file.read()
     if not arquivo_bytes:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado está vazio.")
-    
+
     try:
         chamada_json = processar_pdf_para_json(arquivo_bytes)
     except json.JSONDecodeError:
@@ -156,7 +156,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
     # AQUI ELE CADASTRA AS REVISTAS
     revistas_inseridas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
-    
+
     return {
         "data": {
             "id_chamada": id_chamada_criada,
@@ -165,6 +165,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         },
         "message": "Chamada criada e revistas cadastradas com sucesso."
     }
+
 
 @router.get("/listar-chamadas-usuario")
 async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
@@ -188,4 +189,30 @@ async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supab
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocorreu um erro ao buscar as chamadas de devolução."
+        )
+
+
+@router.get("/datas-limite", summary="Listar datas-limite das chamadas de encalhe do usuário")
+async def listar_datas_limite_chamadas(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
+    """
+    Lista todas as datas-limite das chamadas de encalhe do usuário autenticado.
+    """
+    try:
+        resposta = (
+            supabase_admin.table("chamadasdevolucao")
+            .select("data_limite")
+            .eq("id_usuario", user["sub"])
+            .order("data_limite", desc=True)
+            .execute()
+        )
+        datas = [item["data_limite"] for item in resposta.data if "data_limite" in item]
+        return {
+            "data": datas,
+            "message": "Datas-limite das chamadas de encalhe listadas com sucesso."
+        }
+    except Exception as e:
+        print(f"Erro ao buscar datas-limite no Supabase: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ocorreu um erro ao buscar as datas-limite das chamadas de encalhe."
         )
