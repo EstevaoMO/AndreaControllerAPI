@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+# Modelo de revista para resposta dos endpoints que retornam revistas
 class RevistaResposta(BaseModel):
     id_revista: int
     nome: str
@@ -10,3 +11,9 @@ class RevistaResposta(BaseModel):
     preco_capa: float
     preco_liquido: float
     score: float | None = None
+
+# Modelo de body para receber uma revista no endpoint de cadastrar código de barras
+class CadastrarCodigoRevista(BaseModel):
+    nome: str
+    numero_edicao: str
+    codigo_barras: str

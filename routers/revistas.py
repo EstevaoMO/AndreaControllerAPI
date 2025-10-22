@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Depends
 from supabase import Client, create_client
 
-from models.revista_model import RevistaResposta
+from models.revista_model import RevistaResposta, CadastrarCodigoRevista
 
 from settings.settings import importar_configs
 from services.auth import validar_token
@@ -171,3 +171,42 @@ async def upload_image(codigo: int, imagem: UploadFile = File(...), user: dict =
         }
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao salvar o arquivo: {e}")
+    
+@router.post("/cadastrar-codigo")
+def cadastrar_codigo_barras(revista: CadastrarCodigoRevista, user: dict = Depends(validar_token)):
+    try:
+        if (len(revista.codigo_barras) != 13 or not revista.codigo_barras.isdigit()):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"O código de barras fornecido não tem 13 dígitos ou não é composto apenas por números: {revista.codigo_barras}")
+
+        dados = pegar_revistas()
+        
+        if not dados.data:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
+
+        response = None
+        for item in dados.data:
+            if (item["nome"] == revista.nome and item["numero_edicao"] == revista.numero_edicao):
+                if (not item["codigo_barras"] or len(item["codigo_barras"]) != 13):
+                    response = supabase.table("revistas").update({
+                        'codigo_barras': revista.codigo_barras
+                    }).eq('id_revista', item["id_revista"]).execute()
+                    
+                    break
+                else:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Revista {item["nome"]} ({item["numero_edicao"]}) já possui código de barras: {item["codigo_barras"]}")
+        
+        if response is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Nenhuma revista encontrada com esse nome e edição. Nome fornecido: {revista.nome}; Apelido fornecido: {revista.apelido_revista}; Edição fornecida: {revista.numero_edicao}"
+            )
+        
+        return {
+            "data": response.data,
+            "message": "Código de barras atualizado com sucesso"
+        }
+    
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao atualizar revista: {e}")
