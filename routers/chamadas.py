@@ -8,7 +8,8 @@ from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
 from services.extracao import processar_pdf_para_json
-
+from routers.revistas import pegar_revistas
+from rapidfuzz import fuzz
 
 
 router = APIRouter(
@@ -24,7 +25,7 @@ URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
 # Usando a chave "service_key" conseguimos essa permissão, mas inserimos como um usuário diferente do usuário logado
 # Por isso, dentro de 'docs', fiz os arquivos serem salvos dentro de uma pasta com o user_id
-def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client, id_chamada: int) -> int:
+def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client) -> tuple[int, int]:
     """
     Processa os dados das revistas do JSON e os insere em lote na tabela 'revistas'.
     Retorna a quantidade de revistas inseridas com sucesso.
@@ -33,37 +34,93 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
     lista_revistas_json = chamada_json.get("revistas", [])
 
     if not lista_revistas_json:
-        return 0
+        return (0, 0)
+    
+    revistas_banco = pegar_revistas()
+    revistas_existentes = revistas_banco.data if revistas_banco and revistas_banco.data else []
+
+    sufixos_padrao = ["c.p dura", "c.p. dura", "capa dura", "deluxe"]
+
+    inseridas = 0
+    atualizadas = 0
+
+    def _normalizar_nome(nome: str) -> str:
+        """Remove espaços e deixa tudo em minúsculo para comparação."""
+        return nome.lower().strip()
+
+    def _tem_sufixo(nome: str, sufixos_padrao: list[str]) -> bool:
+        """Verifica se o nome contém algum sufixo da lista."""
+        nome_lower = nome.lower()
+        return any(sufixo in nome_lower for sufixo in sufixos_padrao)
 
     for revista_data in lista_revistas_json:
         try:
-            preco_capa_str = str(revista_data.get("preco_capa", "0.0")).replace(',', '.')
-            preco_liq_str = str(revista_data.get("preco_liquido", "0.0")).replace(',', '.')
-            
-            revistas_para_inserir.append({
-                "nome": revista_data.get("nome"),
-                "apelido_revista": revista_data.get("apelido_revista"),
-                "numero_edicao": int(revista_data.get("numero_edicao", 0)),
-                "codigo_barras": str(revista_data.get("codigo_barras", "")).strip(),
-                "qtd_estoque": int(revista_data.get("qtd_estoque") or 0),
-                "preco_capa": float(preco_capa_str),
-                "preco_liquido": float(preco_liq_str),
-            })
+            nome = str(revista_data.get("nome", "")).strip()
+            numero_edicao = int(revista_data.get("numero_edicao", 0))
+            qtd_nova = int(revista_data.get("qtd_estoque") or 0)
+            preco_capa = float(str(revista_data.get("preco_capa", "0.0")).replace(',', '.'))
+
+            if not nome:
+                continue
+
+            nome_normalizado = _normalizar_nome(nome)
+            tem_sufixo_novo = _tem_sufixo(nome, sufixos_padrao)
+
+            # Tenta encontrar revista existente parecida
+            revista_existente = None
+            for rev in revistas_existentes:
+                nome_banco = rev["nome"]
+                nome_banco_norm = _normalizar_nome(nome_banco)
+                tem_sufixo_banco = _tem_sufixo(nome_banco, sufixos_padrao)
+
+                # Só compara se o número da edição for o mesmo)
+                if str(rev.get("numero_edicao")) != str(numero_edicao):
+                    continue
+
+                # Se um tem sufixo e o outro não, são produtos diferentes
+                if tem_sufixo_banco != tem_sufixo_novo:
+                    continue
+
+                # Comparação exata ou fuzzy
+                similaridade = fuzz.token_sort_ratio(nome_normalizado, nome_banco_norm)
+                if similaridade >= 95:
+                    revista_existente = rev
+                    break
+
+            if revista_existente:
+                # Atualiza estoque
+                novo_estoque = (revista_existente.get("qtd_estoque") or 0) + qtd_nova
+                supabase_admin.table("revistas").update(
+                    {"qtd_estoque": novo_estoque}
+                ).eq("id_revista", revista_existente["id_revista"]).execute()
+                revista_existente["qtd_estoque"] = novo_estoque
+                atualizadas += 1
+
+            else:
+                # Adiciona nova revista à lista de inserção
+                revistas_para_inserir.append({
+                    "nome": nome,
+                    "numero_edicao": numero_edicao,
+                    "qtd_estoque": qtd_nova,
+                    "preco_capa": preco_capa,
+                })
+                inseridas += 1
+
         except (ValueError, TypeError) as e:
-            print(f"Aviso: Ignorando revista com dados inválidos: {revista_data.get('produto')}. Erro: {e}")
+            print(f"Aviso: Ignorando revista com dados inválidos: {revista_data.get('nome')}. Erro: {e}")
             continue
 
-    if not revistas_para_inserir:
-        return 0
+    # Inserir em lote as novas revistas
+    if revistas_para_inserir:
+        try:
+            supabase_admin.table("revistas").insert(revistas_para_inserir).execute()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Erro de banco ao inserir revistas: {str(e)}"
+            )
 
-    try:
-        resposta_revistas = supabase_admin.table("revistas").insert(revistas_para_inserir).execute()
-        return len(resposta_revistas.data)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ocorreu um erro de banco de dados ao inserir as revistas: {str(e)}"
-        )
+    return (inseridas, atualizadas)
 
 
 @router.post("/cadastrar-chamada", status_code=status.HTTP_201_CREATED)
@@ -155,13 +212,14 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
 
     # AQUI ELE CADASTRA AS REVISTAS
-    revistas_inseridas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
+    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
     
     return {
         "data": {
             "id_chamada": id_chamada_criada,
             "url_documento": url_assinada,
-            "qtd_revistas_cadastradas": revistas_inseridas
+            "qtd_revistas_cadastradas": revistas_inseridas,
+            "qtd_revistas_atualizadas": revistas_atualizadas,
         },
         "message": "Chamada criada e revistas cadastradas com sucesso."
     }
