@@ -33,7 +33,7 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client)
 
     if not lista_revistas_json:
         return (0, 0)
-    
+
     revistas_banco = pegar_revistas()
     revistas_existentes = revistas_banco.data if revistas_banco and revistas_banco.data else []
 
@@ -130,7 +130,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
     arquivo_bytes = await file.read()
     if not arquivo_bytes:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado está vazio.")
-    
+
     try:
         chamada_json = processar_pdf_para_json(arquivo_bytes)
     except json.JSONDecodeError:
@@ -188,8 +188,8 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
 
     # AQUI ELE CADASTRA AS REVISTAS
-    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
-    
+    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(chamada_json, supabase_admin)
+
     return {
         "data": {
             "id_chamada": id_chamada_criada,
