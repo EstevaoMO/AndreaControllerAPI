@@ -7,7 +7,7 @@ import json
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
-from services.extracao import processar_pdf_para_json
+from services.extracao_nota_entrega import processar_pdf_para_json
 from routers.revistas import pegar_revistas
 from rapidfuzz import fuzz
 
@@ -25,12 +25,11 @@ URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
 # Usando a chave "service_key" conseguimos essa permissão, mas inserimos como um usuário diferente do usuário logado
 # Por isso, dentro de 'docs', fiz os arquivos serem salvos dentro de uma pasta com o user_id
-def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client, id_entrega_criada: str, data_recebimento: datetime) -> tuple[int, int]:
+def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client, id_entrega_criada: str) -> tuple[int, int]:
     """
     Processa os dados das revistas do JSON e os insere em lote na tabela 'revistas'.
     Retorna a quantidade de revistas inseridas com sucesso.
     """
-    revistas_para_inserir = []
     lista_revistas_json = entrega_json.get("revistas", [])
 
     if not lista_revistas_json:
@@ -89,42 +88,52 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
 
             if revista_existente:
                 # Atualiza estoque
-                novo_estoque = (revista_existente.get("qtd_estoque") or 0) + qtd_nova
-                supabase_admin.table("revistas").update(
-                    {"qtd_estoque": novo_estoque}
-                ).eq("id_revista", revista_existente["id_revista"]).execute()
-                revista_existente["qtd_estoque"] = novo_estoque
-                atualizadas += 1
+                try:
+                    novo_estoque = (revista_existente.get("qtd_estoque") or 0) + qtd_nova
+                    supabase_admin.table("revistas").update(
+                        {"qtd_estoque": novo_estoque}
+                    ).eq("id_revista", revista_existente["id_revista"]).execute()
+                    
+                    supabase_admin.table("revistas_documentos_entrega").insert({
+                        "id_documento_entrega": id_entrega_criada,
+                        "id_revista": revista_existente["id_revista"],
+                        "qtd_entregue": qtd_nova,
+                    }).execute()
+                    
+                    revista_existente["qtd_estoque"] = novo_estoque
+                    atualizadas += 1
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Erro de banco ao inserir revistas: {str(e)}"
+                    )
 
             else:
                 # Adiciona nova revista à lista de inserção
-                revistas_para_inserir.append({
-                    "nome": nome,
-                    "numero_edicao": numero_edicao,
-                    "qtd_estoque": qtd_nova,
-                    "preco_capa": preco_capa,
-                })
-                inseridas += 1
+                try:
+                    revista_para_inserir = {
+                        "nome": nome,
+                        "numero_edicao": numero_edicao,
+                        "qtd_estoque": qtd_nova,
+                        "preco_capa": preco_capa,
+                    }
+                    revista_inserida = supabase_admin.table("revistas").insert(revista_para_inserir).execute()
+                    id_revista = revista_inserida.data[0]["id_revista"]
+                    supabase_admin.table("revistas_documentos_entrega").insert({
+                        "id_documento_entrega": id_entrega_criada,
+                        "id_revista": id_revista,
+                        "qtd_entregue": qtd_nova,
+                    }).execute()
+                    inseridas += 1
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Erro de banco ao inserir revistas: {str(e)}"
+                    )
 
         except (ValueError, TypeError) as e:
             print(f"Aviso: Ignorando revista com dados inválidos: {revista_data.get('nome')}. Erro: {e}")
             continue
-
-    # Inserir em lote as novas revistas
-    if revistas_para_inserir:
-        try:
-            lista_revistas_inseridas = supabase_admin.table("revistas").insert(revistas_para_inserir).execute()
-            for revista_inserida in lista_revistas_inseridas.data:
-                supabase_admin.table("revistas_documentos_entrega").insert({
-                    "id_chamada_devolucao": id_entrega_criada,
-                    "id_revista": revista_inserida["id_revista"],
-                    "qtd_entregue": qtd_nova,
-                }).execute()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Erro de banco ao inserir revistas: {str(e)}"
-            )
 
     return (inseridas, atualizadas)
 
@@ -149,27 +158,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="O conteúdo do JSON é inválido. A chave 'notasentrega' é obrigatória."
         )
-
-
-    # Carrega o arquivo json no Bucket, criando uma pasta com o user_id
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    caminho_arquivo = f"{user['sub']}/{timestamp}_{file.filename}"
-    try:
-        supabase_admin.storage.from_(st.BUCKET).upload(
-            path=caminho_arquivo,
-            file=arquivo_bytes,
-            file_options={"content-type": file.content_type or "application/json"}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao salvar o arquivo: {e}")
-
-    try:
-        assinatura = supabase_admin.storage.from_(st.BUCKET).create_signed_url(caminho_arquivo, URL_EXPIRATION_SECONDS)
-        url_assinada = assinatura.get("signedURL")
-        if not url_assinada:
-            raise ValueError("A resposta da URL assinada não contém a chave 'signedURL'.")
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao gerar URL para o documento: {e}")
 
     try:
         cd = entrega_json.get("notasentrega")
@@ -200,18 +188,14 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
         dados_entrega = {
             "id_usuario": user["sub"],
-            "ponto_venda_id": entrega_json["notasentrega"]["ponto_venda_id"],
-            "nota_entrega_id": entrega_json["notasentrega"]["nota_entrega_id"],
-            "data": datetime.strptime(
-                entrega_json["notasentrega"]["data_limite"], "%Y-%m-%d"
-            ).date().isoformat(),
-            "url_documento": url_assinada
+            "data_entrega": datetime.strptime(
+                entrega_json["notasentrega"]["data"], "%Y-%m-%d"
+            ).date().isoformat()
         }
 
-        resposta_insert = supabase_admin.table("notasentrega").insert(dados_entrega).execute()
+        resposta_insert = supabase_admin.table("documentos_entrega").insert(dados_entrega).execute()
         entrega_criada = resposta_insert.data[0]
-        id_entrega_criada = entrega_criada["id_nota_entrega"]
-        data_entrega_criada = entrega_criada["data"]
+        id_entrega_criada = entrega_criada["id_documento_entrega"]
 
     except KeyError as e:
         detail = f"Chave ausente no JSON: {e}"
@@ -222,12 +206,11 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
 
     # AQUI ELE CADASTRA AS REVISTAS
-    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(entrega_json, supabase_admin, id_entrega_criada, data_entrega_criada)
+    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(entrega_json, supabase_admin, id_entrega_criada)
     
     return {
         "data": {
             "id_entrega": id_entrega_criada,
-            "url_documento": url_assinada,
             "qtd_revistas_cadastradas": revistas_inseridas,
             "qtd_revistas_atualizadas": revistas_atualizadas,
         },
