@@ -1,6 +1,6 @@
 from fastapi import FastAPI, status, HTTPException
 from fastapi.responses import JSONResponse
-from routers import chamadas, revistas, vendas
+from routers import chamadas, revistas, vendas, entregas
 
 from settings.settings import importar_configs
 from services.auth import pegar_usuario_admin
@@ -66,5 +66,6 @@ def ping():
 
 # Outras rotas
 app.include_router(chamadas.router)
+app.include_router(entregas.router)
 app.include_router(revistas.router)
 app.include_router(vendas.router)
