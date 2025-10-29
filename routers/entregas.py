@@ -25,7 +25,7 @@ URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
 # Usando a chave "service_key" conseguimos essa permissão, mas inserimos como um usuário diferente do usuário logado
 # Por isso, dentro de 'docs', fiz os arquivos serem salvos dentro de uma pasta com o user_id
-def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client) -> tuple[int, int]:
+def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client, id_entrega_criada: str, data_recebimento: datetime) -> tuple[int, int]:
     """
     Processa os dados das revistas do JSON e os insere em lote na tabela 'revistas'.
     Retorna a quantidade de revistas inseridas com sucesso.
@@ -113,7 +113,13 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client)
     # Inserir em lote as novas revistas
     if revistas_para_inserir:
         try:
-            supabase_admin.table("revistas").insert(revistas_para_inserir).execute()
+            lista_revistas_inseridas = supabase_admin.table("revistas").insert(revistas_para_inserir).execute()
+            for revista_inserida in lista_revistas_inseridas.data:
+                supabase_admin.table("revistas_documentos_entrega").insert({
+                    "id_chamada_devolucao": id_entrega_criada,
+                    "id_revista": revista_inserida["id_revista"],
+                    "qtd_entregue": qtd_nova,
+                }).execute()
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -205,6 +211,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         resposta_insert = supabase_admin.table("notasentrega").insert(dados_entrega).execute()
         entrega_criada = resposta_insert.data[0]
         id_entrega_criada = entrega_criada["id_nota_entrega"]
+        data_entrega_criada = entrega_criada["data"]
 
     except KeyError as e:
         detail = f"Chave ausente no JSON: {e}"
@@ -215,7 +222,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
 
     # AQUI ELE CADASTRA AS REVISTAS
-    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(entrega_json, supabase_admin)
+    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(entrega_json, supabase_admin, id_entrega_criada, data_entrega_criada)
     
     return {
         "data": {

@@ -188,7 +188,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
 
     # AQUI ELE CADASTRA AS REVISTAS
-    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(chamada_json, supabase_admin)
+    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
 
     return {
         "data": {
