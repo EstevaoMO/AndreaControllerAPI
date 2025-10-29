@@ -23,12 +23,11 @@ st = importar_configs()
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
 # Usando a chave "service_key" conseguimos essa permissão, mas inserimos como um usuário diferente do usuário logado
 # Por isso, dentro de 'docs', fiz os arquivos serem salvos dentro de uma pasta com o user_id
-def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client) -> tuple[int, int]:
+def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client, id_chamada: str) -> tuple[int, int]:
     """
     Processa os dados das revistas do JSON e os insere em lote na tabela 'revistas'.
     Retorna a quantidade de revistas inseridas com sucesso.
     """
-    revistas_para_inserir = []
     lista_revistas_json = chamada_json.get("revistas", [])
 
     if not lista_revistas_json:
@@ -37,86 +36,72 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client)
     revistas_banco = pegar_revistas()
     revistas_existentes = revistas_banco.data if revistas_banco and revistas_banco.data else []
 
-    sufixos_padrao = ["c.p dura", "c.p. dura", "capa dura", "deluxe"]
-
     inseridas = 0
     atualizadas = 0
+    
+    def _cadastrar_codigo_barras(revista):
+        try:
+            revista["codigo_barras"] = str(revista["codigo_barras"])[:13]
+            if (len(str(revista["codigo_barras"])) != 13 or not revista["codigo_barras"].isdigit()):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"O código de barras fornecido não tem 13 dígitos ou não é composto apenas por números: {revista["codigo_barras"]}")
 
-    def _normalizar_nome(nome: str) -> str:
-        """Remove espaços e deixa tudo em minúsculo para comparação."""
-        return nome.lower().strip()
+            response = None
+            for item in revistas_existentes:
+                if (item["nome"] == revista["nome"] and item["numero_edicao"] == revista["numero_edicao"]):
+                    if (not item["codigo_barras"] or len(str(item["codigo_barras"])) != 13):
+                        response = supabase_admin.table("revistas").update({
+                            'codigo_barras': revista["codigo_barras"]
+                        }).eq('id_revista', item["id_revista"]).execute()
 
-    def _tem_sufixo(nome: str, sufixos_padrao: list[str]) -> bool:
-        """Verifica se o nome contém algum sufixo da lista."""
-        nome_lower = nome.lower()
-        return any(sufixo in nome_lower for sufixo in sufixos_padrao)
+                        supabase_admin.table("revistas_chamadasdevolucao").insert({
+                            "id_chamada_devolucao": id_chamada,
+                            "id_revista": item["id_revista"],
+                            "data_recebimento": revista["data_entrega"],
+                            "qtd_recebida": revista["qtd_estoque"],
+                        }).execute()
+                        
+                        return True
+                    else:
+                        return False
+            
+            if response is None:
+                try:
+                    resposta_insert = supabase_admin.table("revistas").insert({
+                        "nome": revista["nome"],
+                        "numero_edicao": revista["numero_edicao"],
+                        "codigo_barras": revista["codigo_barras"],
+                        "qtd_estoque": revista["qtd_estoque"],
+                        "preco_capa": revista["preco_capa"],
+                        "preco_liquido": revista["preco_liquido"]
+                    }).execute()
+
+                    revista_criada = resposta_insert.data[0]
+                    id_revista = revista_criada["id_revista"]
+
+                    supabase_admin.table("revistas_chamadasdevolucao").insert({
+                        "id_chamada_devolucao": id_chamada,
+                        "id_revista": id_revista,
+                        "data_recebimento": revista["data_entrega"],
+                        "qtd_recebida": revista["qtd_estoque"],
+                    }).execute()
+                except Exception as e:
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao inserir revista: {e}; Revista: {revista}")
+        
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao atualizar revista: {e}")
 
     for revista_data in lista_revistas_json:
         try:
-            nome = str(revista_data.get("nome", "")).strip()
-            numero_edicao = int(revista_data.get("numero_edicao", 0))
-            qtd_nova = int(revista_data.get("qtd_estoque") or 0)
-            preco_capa = float(str(revista_data.get("preco_capa", "0.0")).replace(',', '.'))
-
-            if not nome:
-                continue
-
-            nome_normalizado = _normalizar_nome(nome)
-            tem_sufixo_novo = _tem_sufixo(nome, sufixos_padrao)
-
-            # Tenta encontrar revista existente parecida
-            revista_existente = None
-            for rev in revistas_existentes:
-                nome_banco = rev["nome"]
-                nome_banco_norm = _normalizar_nome(nome_banco)
-                tem_sufixo_banco = _tem_sufixo(nome_banco, sufixos_padrao)
-
-                # Só compara se o número da edição for o mesmo)
-                if str(rev.get("numero_edicao")) != str(numero_edicao):
-                    continue
-
-                # Se um tem sufixo e o outro não, são produtos diferentes
-                if tem_sufixo_banco != tem_sufixo_novo:
-                    continue
-
-                # Comparação exata ou fuzzy
-                similaridade = fuzz.token_sort_ratio(nome_normalizado, nome_banco_norm)
-                if similaridade >= 95:
-                    revista_existente = rev
-                    break
-
-            if revista_existente:
-                # Atualiza estoque
-                novo_estoque = (revista_existente.get("qtd_estoque") or 0) + qtd_nova
-                supabase_admin.table("revistas").update(
-                    {"qtd_estoque": novo_estoque}
-                ).eq("id_revista", revista_existente["id_revista"]).execute()
-                revista_existente["qtd_estoque"] = novo_estoque
+            if _cadastrar_codigo_barras(revista_data):
                 atualizadas += 1
-
             else:
-                # Adiciona nova revista à lista de inserção
-                revistas_para_inserir.append({
-                    "nome": nome,
-                    "numero_edicao": numero_edicao,
-                    "qtd_estoque": qtd_nova,
-                    "preco_capa": preco_capa,
-                })
                 inseridas += 1
 
         except (ValueError, TypeError) as e:
             print(f"Aviso: Ignorando revista com dados inválidos: {revista_data.get('nome')}. Erro: {e}")
             continue
-
-    # Inserir em lote as novas revistas
-    if revistas_para_inserir:
-        try:
-            supabase_admin.table("revistas").insert(revistas_para_inserir).execute()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Erro de banco ao inserir revistas: {str(e)}"
-            )
 
     return (inseridas, atualizadas)
 

@@ -198,7 +198,7 @@ def cadastrar_codigo_barras(revista: CadastrarCodigoRevista, user: dict = Depend
         if response is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Nenhuma revista encontrada com esse nome e edição. Nome fornecido: {revista.nome}; Apelido fornecido: {revista.apelido_revista}; Edição fornecida: {revista.numero_edicao}"
+                detail=f"Nenhuma revista encontrada com esse nome e edição. Nome fornecido: {revista.nome};  Edição fornecida: {revista.numero_edicao}"
             )
         
         return {

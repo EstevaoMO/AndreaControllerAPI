@@ -1,7 +1,8 @@
 import json
 import re
 from typing import Optional
-from pypdf import PdfReader
+# from pypdf import PdfReader
+import pdfplumber
 import google.generativeai as genai
 from settings.settings import importar_configs
 from io import BytesIO
@@ -29,8 +30,9 @@ Esquema de saída:
       "id_revista": null,
       "nome": "string",
       "apelido_revista": null,
-      "numero_edicao": "string",
+      "numero_edicao": int,
       "codigo_barras": "string|null",
+      "data_entrega": "YYYY-MM-DD|null",
       "qtd_estoque": 0,
       "preco_capa": 0,
       "preco_liquido": 0,
@@ -49,8 +51,9 @@ REGRAS:
   - id_chamada_devolucao, id_usuario: null
 - Tabela → revistas (uma entrada por produto):
   - nome: título do produto (ignore linhas de categoria/autores/variante)
-  - numero_edicao: coluna “Edição” (preserve zeros à esquerda)
+  - numero_edicao: coluna “Edição”
   - codigo_barras: número de 13 dígitos sob o produto; se ausente, null
+  - data_entrega: data da entrega da revista (DD/MM/AAAA) → ISO YYYY-MM-DD.
   - qtd_estoque: valor da coluna “Rep”
   - preco_capa: coluna “Pço.Capa” (converter 13,90 → 13.90)
   - preco_liquido: coluna “Pço.Liq.” (converter vírgula → ponto)
@@ -71,18 +74,28 @@ REGRAS:
 """
 
 # Funções auxiliares
+# def extrair_texto_pdf_bytes(file_bytes: bytes) -> Optional[str]:
+#     """Extrai texto de todas as páginas de um PDF a partir de um arquivo binário."""
+#     try:
+#         reader = PdfReader(BytesIO(file_bytes))
+#         texto = []
+#         for page in reader.pages:
+#             t = page.extract_text() or ""
+#             texto.append(t)
+#         return "\n".join(texto).strip()
+#     except Exception as e:
+#         print(f"[ERRO] Falha ao ler PDF: {e}")
+#         return None
+
 def extrair_texto_pdf_bytes(file_bytes: bytes) -> Optional[str]:
     """Extrai texto de todas as páginas de um PDF a partir de um arquivo binário."""
-    try:
-        reader = PdfReader(BytesIO(file_bytes))
-        texto = []
-        for page in reader.pages:
-            t = page.extract_text() or ""
-            texto.append(t)
-        return "\n".join(texto).strip()
-    except Exception as e:
-        print(f"[ERRO] Falha ao ler PDF: {e}")
-        return None
+    texto = []
+    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            # layout=True preserva espaços entre colunas
+            texto_page = page.extract_text(layout=True) or ""
+            texto.append(texto_page)
+    return "\n".join(texto).strip()
 
 def chamar_gemini(texto_bruto: str) -> str:
     """Chama o Gemini e pede a resposta em JSON puro."""
