@@ -14,6 +14,7 @@ Scipt básico para gerar token de login ou cadastrar um novo usuário, roda tudo
         admin123
 """
 
+
 load_dotenv()
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_API_KEY")
