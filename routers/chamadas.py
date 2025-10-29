@@ -1,10 +1,10 @@
-from fastapi import APIRouter, UploadFile, HTTPException, File, Depends, status
-from datetime import datetime
+from fastapi import APIRouter, UploadFile, HTTPException, File, Depends, status, Query
+from datetime import datetime, date, timedelta
 from supabase import Client
 from typing import List, Dict, Any
 import json
 
-from models.chamada_model import ChamadaDevolucaoResposta
+from models.chamada_model import ChamadaDevolucaoResposta, AlertaChamadaNotificacao
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
 from services.extracao import processar_pdf_para_json
@@ -18,8 +18,6 @@ router = APIRouter(
 )
 
 st = importar_configs()
-URL_EXPIRATION_SECONDS = 30 * 24 * 60 * 60 
-
 
 # Permissão de Admin para colocar arquivo no bucket
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
@@ -144,27 +142,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
             detail="O conteúdo do JSON é inválido. A chave 'chamadasdevolucao' é obrigatória."
         )
 
-
-    # Carrega o arquivo json no Bucket, criando uma pasta com o user_id
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    caminho_arquivo = f"{user['sub']}/{timestamp}_{file.filename}"
-    try:
-        supabase_admin.storage.from_(st.BUCKET).upload(
-            path=caminho_arquivo,
-            file=arquivo_bytes,
-            file_options={"content-type": file.content_type or "application/json"}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao salvar o arquivo: {e}")
-
-    try:
-        assinatura = supabase_admin.storage.from_(st.BUCKET).create_signed_url(caminho_arquivo, URL_EXPIRATION_SECONDS)
-        url_assinada = assinatura.get("signedURL")
-        if not url_assinada:
-            raise ValueError("A resposta da URL assinada não contém a chave 'signedURL'.")
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao gerar URL para o documento: {e}")
-
     try:
         cd = chamada_json.get("chamadasdevolucao")
         if cd is None:
@@ -195,7 +172,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
             "data_limite": datetime.strptime(
                 chamada_json["chamadasdevolucao"]["data_limite"], "%Y-%m-%d"
             ).date().isoformat(),
-            "url_documento": url_assinada,
             "status": "aberta"
         }
 
@@ -217,7 +193,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
     return {
         "data": {
             "id_chamada": id_chamada_criada,
-            "url_documento": url_assinada,
             "qtd_revistas_cadastradas": revistas_inseridas,
             "qtd_revistas_atualizadas": revistas_atualizadas,
         },
@@ -247,3 +222,95 @@ async def listar_chamadas_por_usuario(user: dict = Depends(validar_token), supab
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocorreu um erro ao buscar as chamadas de devolução."
         )
+
+@router.get("/alertas",response_model=List[AlertaChamadaNotificacao], summary="Alertas de chamadas com data_limite em ≤ N dias")
+async def listar_alertas_chamadas(
+    dias: int = Query(5, ge=0, le=60, description="Janela a partir de hoje (padrão=5)"),
+    incluir_vencidas: bool = Query(
+        True, description="Se True, inclui itens já vencidos (ex.: venceu no sábado, avisa na segunda)."
+    ),
+    user: dict = Depends(validar_token),
+    supabase_admin: Client = Depends(pegar_usuario_admin),
+):
+    """
+    Regra:
+    - incluir_vencidas=True  -> traz tudo com data_limite <= hoje+N (inclui atrasadas)
+    - incluir_vencidas=False -> apenas hoje <= data_limite <= hoje+N
+    Sempre filtrando pelo usuário autenticado.
+    """
+    hoje = date.today()
+    limite = hoje + timedelta(days=dias)
+    today_str = hoje.strftime("%Y-%m-%d")
+    limit_str = limite.strftime("%Y-%m-%d")
+
+    try:
+        q = (
+            supabase_admin
+            .table("chamadasdevolucao")
+            .select("id_chamada_devolucao,data_limite,status")
+        )
+
+        if incluir_vencidas:
+            # Compatível com coluna DATE
+            q = q.lte("data_limite", limit_str)
+        else:
+            q = q.gte("data_limite", today_str).lte("data_limite", limit_str)
+
+        q = q.order("data_limite", desc=False)
+        resp = q.execute()
+        rows = resp.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao consultar Supabase: {e!s}")
+
+    saida: List[AlertaChamadaNotificacao] = []
+
+    for r in rows:
+        enc = r.get("data_limite")
+        if enc is None:
+            continue
+
+        # Guarda de segurança (se o PostgREST devolver algo fora do range por TZ)
+        if incluir_vencidas:
+            if enc > limite:
+                continue
+        else:
+            if enc < hoje or enc > limite:
+                continue
+
+        dias_restantes = (enc - hoje).days
+
+        saida.append(
+            AlertaChamadaNotificacao(
+                id=int(r["id_chamada_devolucao"]),  # ajuste se sua PK não for 'id'
+                data_limite=enc,
+                dias_restantes=dias_restantes,
+                status=r.get("status", "")
+            )
+        )
+
+    return saida
+
+@router.get("/{id}", response_model=ChamadaDevolucaoResposta)
+async def get_chamada_por_id(id: int, user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)) -> ChamadaDevolucaoResposta:
+    """
+    Retorna os dados de uma chamada de devolução pelo ID.
+    """
+    try:
+        resposta = (
+            supabase_admin.table("chamadasdevolucao")
+            .select("*")
+            .eq("id_chamada_devolucao", id)
+            .single()
+            .execute()
+        )
+
+        if not resposta.data:
+            raise HTTPException(status_code=404, detail=f"Chamada {id} não encontrada")
+
+        return resposta.data
+
+    except Exception as e:
+        msg = str(e)
+        if "No rows" in msg or "multiple (or no) rows returned" in msg:
+            raise HTTPException(status_code=404, detail=f"Chamada {id} não encontrada")
+        raise HTTPException(status_code=500, detail=msg)

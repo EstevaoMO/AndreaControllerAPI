@@ -5,7 +5,6 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_API_KEY: str
     SUPABASE_JWT: str
-    BUCKET: str
     API_KEY: str
     MODEL_NAME: str
     BUCKET_REVISTAS: str

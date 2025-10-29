@@ -8,3 +8,9 @@ class ChamadaDevolucaoResposta(BaseModel):
     data_limite: datetime
     url_documento: str
     status: str
+
+class AlertaChamadaNotificacao(BaseModel):
+    id: int
+    data_limite: datetime
+    dias_restantes: int
+    status: str
