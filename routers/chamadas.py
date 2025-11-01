@@ -9,7 +9,6 @@ from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
 from services.extracao import processar_pdf_para_json
 from routers.revistas import pegar_revistas
-from rapidfuzz import fuzz
 
 
 router = APIRouter(
@@ -23,7 +22,7 @@ st = importar_configs()
 # Era aqui que estava dando problema, a lógica é que você precisa de permissão de adm para inserir dados em BUCKETs
 # Usando a chave "service_key" conseguimos essa permissão, mas inserimos como um usuário diferente do usuário logado
 # Por isso, dentro de 'docs', fiz os arquivos serem salvos dentro de uma pasta com o user_id
-def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client, id_chamada: str) -> tuple[int, int]:
+def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client, id_chamada: str) -> tuple[int, int, int]:
     """
     Processa os dados das revistas do JSON e os insere em lote na tabela 'revistas'.
     Retorna a quantidade de revistas inseridas com sucesso.
@@ -38,72 +37,81 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
 
     inseridas = 0
     atualizadas = 0
+    inseridas_relacionamento = 0
     
-    def _cadastrar_codigo_barras(revista):
+    def inserir_revista(revista):
+        try:
+            resposta_insert = supabase_admin.table("revistas").insert({
+                "nome": revista["nome"],
+                "numero_edicao": revista["numero_edicao"],
+                "codigo_barras": revista["codigo_barras"],
+                "qtd_estoque": revista["qtd_estoque"],
+                "preco_capa": revista["preco_capa"],
+                "preco_liquido": revista["preco_liquido"]
+            }).execute()
+
+            revista_criada = resposta_insert.data[0]
+            return revista_criada
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao inserir revista: {e}; Revista: {revista}")
+
+    def atualizar_codigo_barras(id_revista, revista):
+        try:
+            supabase_admin.table("revistas").update({
+                'codigo_barras': revista["codigo_barras"]
+            }).eq('id_revista', id_revista).execute()
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao atualizar revista: {e}; ID da revista: {id_revista}; Revista: {revista}")
+
+    def inserir_relacao_chamada(id_revista, revista):
+        try:
+            supabase_admin.table("revistas_chamadasdevolucao").insert({
+                "id_chamada_devolucao": id_chamada,
+                "id_revista": id_revista,
+                "data_recebimento": revista["data_entrega"],
+                "qtd_recebida": revista["qtd_estoque"],
+            }).execute()
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao inserir relação entre revista e chamada: {e}; ID da revista: {id_revista}; Revista: {revista}")
+
+    for revista in lista_revistas_json:
         try:
             revista["codigo_barras"] = str(revista["codigo_barras"])[:13]
             if (len(str(revista["codigo_barras"])) != 13 or not revista["codigo_barras"].isdigit()):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"O código de barras fornecido não tem 13 dígitos ou não é composto apenas por números: {revista["codigo_barras"]}")
-
-            response = None
+                raise ValueError(f"O código de barras fornecido não tem 13 dígitos ou não é composto apenas por números: {revista}")
+            achou = False
             for item in revistas_existentes:
+                if item["codigo_barras"] is not None and (item["codigo_barras"] == revista["codigo_barras"]):
+                    inserir_relacao_chamada(item["id_revista"], revista)
+                    inseridas_relacionamento += 1
+                    achou = True
+                    break
+
                 if (item["nome"] == revista["nome"] and item["numero_edicao"] == revista["numero_edicao"]):
                     if (not item["codigo_barras"] or len(str(item["codigo_barras"])) != 13):
-                        response = supabase_admin.table("revistas").update({
-                            'codigo_barras': revista["codigo_barras"]
-                        }).eq('id_revista', item["id_revista"]).execute()
-
-                        supabase_admin.table("revistas_chamadasdevolucao").insert({
-                            "id_chamada_devolucao": id_chamada,
-                            "id_revista": item["id_revista"],
-                            "data_recebimento": revista["data_entrega"],
-                            "qtd_recebida": revista["qtd_estoque"],
-                        }).execute()
-                        
-                        return True
+                        atualizar_codigo_barras(item["id_revista"], revista)
+                        inserir_relacao_chamada(item["id_revista"], revista)
+                        atualizadas += 1
+                        inseridas_relacionamento += 1
+                        achou = True
+                        break
                     else:
-                        return False
-            
-            if response is None:
-                try:
-                    resposta_insert = supabase_admin.table("revistas").insert({
-                        "nome": revista["nome"],
-                        "numero_edicao": revista["numero_edicao"],
-                        "codigo_barras": revista["codigo_barras"],
-                        "qtd_estoque": revista["qtd_estoque"],
-                        "preco_capa": revista["preco_capa"],
-                        "preco_liquido": revista["preco_liquido"]
-                    }).execute()
+                        raise ValueError(f"Revista {item['nome']} ({item['numero_edicao']}) já possui código de barras: {item['codigo_barras']}; Revista do banco: {item}; Revista do JSON: {revista}")
+            if not achou:
+                nova_revista = inserir_revista(revista)
+                inserir_relacao_chamada(nova_revista["id_revista"], revista)
+                inseridas_relacionamento += 1
+                inseridas += 1
 
-                    revista_criada = resposta_insert.data[0]
-                    id_revista = revista_criada["id_revista"]
-
-                    supabase_admin.table("revistas_chamadasdevolucao").insert({
-                        "id_chamada_devolucao": id_chamada,
-                        "id_revista": id_revista,
-                        "data_recebimento": revista["data_entrega"],
-                        "qtd_recebida": revista["qtd_estoque"],
-                    }).execute()
-                except Exception as e:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao inserir revista: {e}; Revista: {revista}")
-        
+        except ValueError as e:
+            print(f"Aviso: Ignorando revista com dados inválidos: {revista.get('nome')}. Erro: {e}")
+            continue
         except HTTPException as e:
             raise e
         except Exception as e:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao atualizar revista: {e}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao processar revista: {e}; Revista: {revista}")
 
-    for revista_data in lista_revistas_json:
-        try:
-            if _cadastrar_codigo_barras(revista_data):
-                atualizadas += 1
-            else:
-                inseridas += 1
-
-        except (ValueError, TypeError) as e:
-            print(f"Aviso: Ignorando revista com dados inválidos: {revista_data.get('nome')}. Erro: {e}")
-            continue
-
-    return (inseridas, atualizadas)
+    return (inseridas, atualizadas, inseridas_relacionamento)
 
 
 @router.post("/cadastrar-chamada", status_code=status.HTTP_201_CREATED)
@@ -173,13 +181,14 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
 
     # AQUI ELE CADASTRA AS REVISTAS
-    revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
+    revistas_inseridas, revistas_atualizadas, inseridas_relacionamento = _cadastrar_revistas_db(chamada_json, supabase_admin, id_chamada_criada)
 
     return {
         "data": {
             "id_chamada": id_chamada_criada,
             "qtd_revistas_cadastradas": revistas_inseridas,
             "qtd_revistas_atualizadas": revistas_atualizadas,
+            "qtd_revistas_chamada": inseridas_relacionamento,
         },
         "message": "Chamada criada e revistas cadastradas com sucesso."
     }
