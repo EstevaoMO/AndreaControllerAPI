@@ -1,7 +1,8 @@
 import json
 import re
 from typing import Optional
-from pypdf import PdfReader
+# from pypdf import PdfReader
+import pdfplumber
 import google.generativeai as genai
 from settings.settings import importar_configs
 from io import BytesIO
@@ -29,8 +30,9 @@ Esquema de saída:
       "id_revista": null,
       "nome": "string",
       "apelido_revista": null,
-      "numero_edicao": "string",
+      "numero_edicao": int|null,
       "codigo_barras": "string|null",
+      "data_entrega": "YYYY-MM-DD|null",
       "qtd_estoque": 0,
       "preco_capa": 0,
       "preco_liquido": 0,
@@ -49,8 +51,9 @@ REGRAS:
   - id_chamada_devolucao, id_usuario: null
 - Tabela → revistas (uma entrada por produto):
   - nome: título do produto (ignore linhas de categoria/autores/variante)
-  - numero_edicao: coluna “Edição” (preserve zeros à esquerda)
+  - numero_edicao: coluna “Edição”; caso não tenha edição, null
   - codigo_barras: número de 13 dígitos sob o produto; se ausente, null
+  - data_entrega: data da entrega da revista (DD/MM/AAAA) → ISO YYYY-MM-DD.
   - qtd_estoque: valor da coluna “Rep”
   - preco_capa: coluna “Pço.Capa” (converter 13,90 → 13.90)
   - preco_liquido: coluna “Pço.Liq.” (converter vírgula → ponto)
@@ -58,6 +61,7 @@ REGRAS:
 - Ignore campos que não existem no banco (Encalhe, Venda, Vlr.Venda, categoria/autores/variantes).
 - Datas: DD/MM/AAAA → YYYY-MM-DD
 - Números: usar ponto como decimal, sem separador de milhar
+- ATENÇÃO: normalmente o ponto de venda será 48507, e é possível que a extração do texto do pdf venha com um erro onde o primeiro número do ponto venha colado na palavra "Ponto". Caso isso ocorra, corrija para 48507, ou o número correspondente. Por exemplo, se o texto estiver na forma "Ponto4 :8507", o ponto é 48507. Além disso, esse número também está presente em outras partes do texto, então você pode usar essas outras partes para confirmar o número correto do ponto de venda.
 - ATENÇÃO: a coluna *Rep* (qtd_estoque) é SEMPRE um número inteiro pequeno (ex.: 1, 2, 3, 10, 25).
 - ATENÇÃO: caso a coluna *rep* seja nula, verificar se a proporção *preco_capa* / *preco_liquido é aproximadamente 1.428. Se for, mantenha como estar. Caso contrário, o primeiro dígito do preço, na realidade, é o valor de reposição. Por exemplo, 169,90 seria 1 rep e 69,90 preco_capa (nesse caso, faça a substituição).
 - ATENÇÃO: a coluna *preco_capa* e *preco_liquido* são SEMPRE valores monetários com DUAS casas decimais (ex.: 6.99, 13.90, 213.90).
@@ -71,18 +75,28 @@ REGRAS:
 """
 
 # Funções auxiliares
+# def extrair_texto_pdf_bytes(file_bytes: bytes) -> Optional[str]:
+#     """Extrai texto de todas as páginas de um PDF a partir de um arquivo binário."""
+#     try:
+#         reader = PdfReader(BytesIO(file_bytes))
+#         texto = []
+#         for page in reader.pages:
+#             t = page.extract_text() or ""
+#             texto.append(t)
+#         return "\n".join(texto).strip()
+#     except Exception as e:
+#         print(f"[ERRO] Falha ao ler PDF: {e}")
+#         return None
+
 def extrair_texto_pdf_bytes(file_bytes: bytes) -> Optional[str]:
     """Extrai texto de todas as páginas de um PDF a partir de um arquivo binário."""
-    try:
-        reader = PdfReader(BytesIO(file_bytes))
-        texto = []
-        for page in reader.pages:
-            t = page.extract_text() or ""
-            texto.append(t)
-        return "\n".join(texto).strip()
-    except Exception as e:
-        print(f"[ERRO] Falha ao ler PDF: {e}")
-        return None
+    texto = []
+    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            # layout=True preserva espaços entre colunas
+            texto_page = page.extract_text(layout=True) or ""
+            texto.append(texto_page)
+    return "\n".join(texto).strip()
 
 def chamar_gemini(texto_bruto: str) -> str:
     """Chama o Gemini e pede a resposta em JSON puro."""
