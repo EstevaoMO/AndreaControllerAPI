@@ -37,9 +37,9 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
     """
     Endpoint para obter a(s) revista(s) buscada(s) pelo seu nome ou apelido, utilizando fuzzy search para definir a proximidade do parâmetro de busca com o nome no banco de dados.
     """
-    
+
     dados = pegar_revistas()
-        
+
     if not dados.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
@@ -53,7 +53,7 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
 
         # Já que nome e apelido são considerados ao mesmo tempo, pega apenas o maior valor de similaridade
         max_score = max(scores)
-        
+
         if max_score >= 70:
             # Considera uma correspondência válida se a similaridade for 70 ou mais e adiciona a revista na lista de resultados
             revista = RevistaResposta(
@@ -68,10 +68,10 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
                 score=max_score
             )
             revistas.append(revista)
-    
+
     if not revistas:
         raise HTTPException(status_code=404, detail="Nenhuma revista encontrada com o nome fornecido.")
-    
+
     return {
         "data": revistas,
         "message": "Revistas encontradas com sucesso."
@@ -82,9 +82,9 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
     """
     Endpoint para obter a revista buscada pelo seu código de barras.
     """
-    
+
     dados = pegar_revistas()
-        
+
     if not dados.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
@@ -105,7 +105,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
                 "data": revista,
                 "message": "Revista encontrada com sucesso."
             }
-    
+
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o código de barras fornecido.")
 
 @router.get("/buscar/edicao")
@@ -113,9 +113,9 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a revista buscada pelo seu número de edição.
     """
-    
+
     dados = pegar_revistas()
-        
+
     if not dados.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
@@ -134,24 +134,24 @@ def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
                 preco_liquido=item["preco_liquido"]
             )
             revistas.append(revista) # Como mais de uma revista pode ter a mesma edição, adiciona na lista
-    
+
     if not revistas:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o número de edição fornecido.")
-    
+
     return {
         "data": revistas,
         "message": "Revistas encontradas com sucesso."
     }
 
 @router.post("/cadastrar-foto")
-async def upload_image(codigo: int, imagem: UploadFile = File(...), user: dict = Depends(validar_token)):
+async def upload_image(codigo: str, imagem: UploadFile = File(...), user: dict = Depends(validar_token)):
     extensao = imagem.filename.split('.')[-1] if '.' in imagem.filename else 'jpg'
     caminho = f"img_{codigo}.{extensao}"
     file_bytes = await imagem.read()
-    
+
     try:
         supabase.storage.from_(st.BUCKET_REVISTAS).upload(
-            path=caminho, 
+            path=caminho,
             file=file_bytes,
             file_options={"content-type": imagem.content_type or "image/jpeg"})
         url = supabase.storage.from_(st.BUCKET_REVISTAS).get_public_url(caminho)
@@ -159,8 +159,8 @@ async def upload_image(codigo: int, imagem: UploadFile = File(...), user: dict =
         # Atualizar a URL na tabela
         response = supabase.table("revistas").update({
             'url_revista': url
-        }).eq('codigo_barras', codigo).execute()
-        
+        }).eq('id_revista', codigo).execute()
+
         return {
             "data": {
                 "caminho_bucket": caminho,
@@ -171,7 +171,7 @@ async def upload_image(codigo: int, imagem: UploadFile = File(...), user: dict =
         }
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao salvar o arquivo: {e}")
-    
+
 @router.post("/cadastrar-codigo")
 def cadastrar_codigo_barras(revista: CadastrarCodigoRevista, user: dict = Depends(validar_token)):
     try:
@@ -179,7 +179,7 @@ def cadastrar_codigo_barras(revista: CadastrarCodigoRevista, user: dict = Depend
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"O código de barras fornecido não tem 13 dígitos ou não é composto apenas por números: {revista.codigo_barras}")
 
         dados = pegar_revistas()
-        
+
         if not dados.data:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
@@ -190,22 +190,22 @@ def cadastrar_codigo_barras(revista: CadastrarCodigoRevista, user: dict = Depend
                     response = supabase.table("revistas").update({
                         'codigo_barras': revista.codigo_barras
                     }).eq('id_revista', item["id_revista"]).execute()
-                    
+
                     break
                 else:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Revista {item["nome"]} ({item["numero_edicao"]}) já possui código de barras: {item["codigo_barras"]}")
-        
+
         if response is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Nenhuma revista encontrada com esse nome e edição. Nome fornecido: {revista.nome};  Edição fornecida: {revista.numero_edicao}"
             )
-        
+
         return {
             "data": response.data,
             "message": "Código de barras atualizado com sucesso"
         }
-    
+
     except HTTPException as e:
         raise e
     except Exception as e:
