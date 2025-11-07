@@ -4,13 +4,14 @@ from supabase import Client
 from typing import List, Dict, Any
 import json
 
-# (Importando o model de Devolucao para manter a tipagem, mas o ideal seria renomear)
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
+# Importa a extração do Gemini (como antes)
 from services.extracao_entrada import processar_pdf_para_json
+# [NOVO] Importa a extração local (PyPDF + Regex)
+from services.extracao import extrair_dados_entrada_local
 from routers.revistas import pegar_revistas
-# Removido import de rapidfuzz, não é mais necessário
 
 
 router = APIRouter(
@@ -163,46 +164,76 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado está vazio.")
 
     try:
-        # Usa o extrator específico de "Nota de Entrega"
+        # --- [NOVO] INÍCIO DA PRÉ-VERIFICAÇÃO LOCAL ---
+        # 1. Extrai data e PDV localmente (sem Gemini)
+        (data_iso_local, pv_id_local) = extrair_dados_entrada_local(arquivo_bytes)
+
+        # 2. Verifica duplicatas no banco
+        resposta_duplicata = (
+            supabase_admin.table("documentos_entrega")
+            .select("id_documento_entrega")
+            .eq("id_usuario", user["sub"])
+            .eq("data_entrega", data_iso_local)
+            .execute()
+        )
+
+        if resposta_duplicata.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Documento de entrega duplicado. Já existe um cadastro para o PDV {pv_id_local} na data {data_iso_local}.",
+            )
+    except ValueError as e:
+        # Falha na extração local (PDF ilegível ou formato inesperado)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro na pré-verificação do PDF: {e}")
+    except HTTPException as e:
+        raise e # Propaga a exceção 409
+    except Exception as e:
+        # Falha na consulta de verificação
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao verificar duplicatas: {e}")
+    # --- [NOVO] FIM DA PRÉ-VERIFICAÇÃO LOCAL ---
+
+
+    # --- Processamento Gemini (só ocorre se a pré-verificação passar) ---
+    try:
+        # 1. Chama o Gemini para extração completa
         entrega_json = processar_pdf_para_json(arquivo_bytes)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro ao processar PDF: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro ao processar PDF (IA): {str(e)}")
 
     if "notasentrega" not in entrega_json:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O conteúdo do JSON é inválido. A chave 'notasentrega' é obrigatória."
+            detail="O conteúdo do JSON (IA) é inválido. A chave 'notasentrega' é obrigatória."
         )
 
+    # 2. Insere o documento principal (com dados do Gemini)
     try:
         cd = entrega_json.get("notasentrega")
         if cd is None:
             raise KeyError("notasentrega")
 
-        # campos esperados
-        pv_id = cd.get("ponto_venda_id")
-        nota_id = cd.get("nota_entrega_id")
-        data = cd.get("data")
+        # campos esperados do Gemini
+        nota_id_gemini = cd.get("nota_entrega_id")
+        data_gemini = cd.get("data")
 
         missing = []
-        if pv_id is None:
-            missing.append("ponto_venda_id")
-        if nota_id is None:
-            missing.append("nota_entrega_id")
-        if data is None:
-            missing.append("data")
+
+        if nota_id_gemini is None:
+            missing.append("nota_entrega_id (IA)")
+        if data_gemini is None:
+            missing.append("data (IA)")
 
         if missing:
-            raise KeyError(f"Campos faltando em notasentrega: {missing}")
+            raise KeyError(f"Campos faltando em notasentrega (IA): {missing}")
+
+        data_iso_gemini = datetime.strptime(data_gemini, "%Y-%m-%d").date().isoformat()
+
+        # [REMOVIDO] Bloco de verificação de duplicata movido para cima.
 
         dados_entrega = {
             "id_usuario": user["sub"],
-            "data_entrega": datetime.strptime(
-                entrega_json["notasentrega"]["data"], "%Y-%m-%d"
-            ).date().isoformat()
-            # Adicione outros campos de 'notasentrega' se a tabela 'documentos_entrega' os tiver
-            # ex: "ponto_venda_id": pv_id,
-            # ex: "numero_nota": nota_id,
+            "data_entrega": data_iso_gemini,
+            "numero_nota": nota_id_gemini,
         }
 
         resposta_insert = supabase_admin.table("documentos_entrega").insert(dados_entrega).execute()
@@ -210,17 +241,19 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         id_entrega_criada = entrega_criada["id_documento_entrega"]
 
     except KeyError as e:
-        detail = f"Chave ausente no JSON: {e}"
+        detail = f"Chave ausente no JSON (IA): {e}"
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     except ValueError as e:
-        detail = f"Valor inválido no JSON: {e}"
+        detail = f"Valor inválido no JSON (IA): {e}"
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+    except HTTPException as e:
+        raise e
     except Exception as e:
         detail = f"Erro ao inserir documento de entrega no banco: {e}"
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
 
-    # AQUI ELE CADASTRA/ATUALIZA AS REVISTAS
+    # 3. Cadastra as revistas (lógica inalterada)
     revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(entrega_json, supabase_admin, id_entrega_criada)
 
     return {
@@ -232,4 +265,26 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         "message": "Entrega criada e estoque de revistas atualizado com sucesso."
     }
 
-# (O endpoint /listar-chamadas-usuario foi removido pois pertencia a devoluções/chamadas)
+# CORREÇÃO DO ERRO 500: Removido o `response_model` que estava causando o ResponseValidationError
+@router.get("/listar-entradas-usuario")
+async def listar_entradas_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
+    """
+    Lista todas as entradas associadas ao usuário autenticado.
+    """
+    try:
+        resposta = (
+            supabase_admin.table("documentos_entrega")
+            .select("*")
+            .eq("id_usuario", user["sub"])
+            .order("data_entrega", desc=True)
+            .execute()
+        )
+        # Retorna os dados brutos do banco (lista)
+        return resposta.data
+
+    except Exception as e:
+        print(f"Erro ao buscar entradas no Supabase: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ocorreu um erro ao buscar as devoluções."
+        )

@@ -4,12 +4,13 @@ from supabase import Client
 from typing import List, Dict, Any
 import json
 
-# Imports atualizados para a nova nomenclatura
-# Removido 'AlertaChamadaNotificacao' que era usado apenas por /alertas
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
+# Importa a extração do Gemini (como antes)
 from services.extracao_devolucao import processar_pdf_para_json
+# [NOVO] Importa a extração local (PyPDF + Regex)
+from services.extracao import extrair_dados_devolucao_local
 from routers.revistas import pegar_revistas
 
 
@@ -164,31 +165,64 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado está vazio.")
 
     try:
+        # --- [NOVO] INÍCIO DA PRÉ-VERIFICAÇÃO LOCAL ---
+        # 1. Extrai data localmente (sem Gemini)
+        data_limite_iso_local = extrair_dados_devolucao_local(arquivo_bytes)
+
+        # 2. Verifica duplicatas no banco
+        resposta_duplicata = (
+            supabase_admin.table("chamadasdevolucao")
+            .select("id_chamada_devolucao")
+            .eq("id_usuario", user["sub"])
+            .eq("data_limite", data_limite_iso_local)
+            .execute()
+        )
+
+        if resposta_duplicata.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Chamada de devolução duplicada. Já existe um cadastro com data limite {data_limite_iso_local}.",
+            )
+    except ValueError as e:
+        # Falha na extração local (PDF ilegível ou formato inesperado)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro na pré-verificação do PDF: {e}")
+    except HTTPException as e:
+        raise e # Propaga a exceção 409
+    except Exception as e:
+        # Falha na consulta de verificação
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao verificar duplicatas: {e}")
+    # --- [NOVO] FIM DA PRÉ-VERIFICAÇÃO LOCAL ---
+
+
+    # --- Processamento Gemini (só ocorre se a pré-verificação passar) ---
+    try:
+        # 1. Chama o Gemini para extração completa
         chamada_json = processar_pdf_para_json(arquivo_bytes)
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro ao processar PDF: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro ao processar PDF (IA): {str(e)}")
 
     if "chamadasdevolucao" not in chamada_json:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O conteúdo do JSON é inválido. A chave 'chamadasdevolucao' é obrigatória."
+            detail="O conteúdo do JSON (IA) é inválido. A chave 'chamadasdevolucao' é obrigatória."
         )
 
+    # 2. Insere o documento principal (com dados do Gemini)
     try:
         cd = chamada_json.get("chamadasdevolucao")
         if cd is None:
             raise KeyError("chamadasdevolucao")
 
-        pv_id = cd.get("ponto_venda_id")
-        dl = cd.get("data_limite")
+        dl_gemini = cd.get("data_limite")
 
-        if not pv_id or not dl:
-            raise KeyError(f"Campos 'ponto_venda_id' e 'data_limite' são obrigatórios.")
+        if not dl_gemini:
+            raise KeyError(f"Campo 'data_limite' é obrigatório (IA).")
+
+        # [REMOVIDO] Bloco de verificação de duplicata movido para cima.
 
         dados_chamada = {
             "id_usuario": user["sub"],
-            "ponto_venda_id": pv_id,
-            "data_limite": datetime.strptime(dl, "%Y-%m-%d").date().isoformat(),
+            "data_limite": datetime.strptime(dl_gemini, "%Y-%m-%d").date().isoformat(),
             "status": "aberta"
         }
 
@@ -196,10 +230,16 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
         chamada_criada = resposta_insert.data[0]
         id_devolucao_criada = chamada_criada["id_chamada_devolucao"]
 
-    except (KeyError, ValueError, Exception) as e:
-        detail = f"Erro ao processar dados da devolução: {e}"
+    except (KeyError, ValueError) as e:
+        detail = f"Erro ao processar dados da devolução (IA): {e}"
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        detail = f"Erro geral ao inserir devolução: {e}"
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
+    # 3. Cadastra as revistas (lógica inalterada)
     revistas_inseridas, revistas_associadas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_devolucao_criada)
 
     return {

@@ -20,7 +20,7 @@ supabase: Client = create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)
 def pegar_revistas():
     try:
         # Coleta todas as revistas do banco de dados
-        dados = supabase.table("revistas").select("id_revista, nome, apelido_revista, numero_edicao, codigo_barras, qtd_estoque, preco_capa, preco_liquido").execute()
+        dados = supabase.table("revistas").select("id_revista, nome, apelido_revista, numero_edicao, codigo_barras, qtd_estoque, preco_capa, preco_liquido", "url_revista").execute()
         return dados
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
