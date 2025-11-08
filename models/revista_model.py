@@ -5,7 +5,7 @@ class RevistaResposta(BaseModel):
     id_revista: int
     nome: str
     apelido_revista: str | None = None
-    numero_edicao: str
+    numero_edicao: int
     codigo_barras: str
     qtd_estoque: int
     preco_capa: float

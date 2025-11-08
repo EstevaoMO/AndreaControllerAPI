@@ -109,7 +109,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o código de barras fornecido.")
 
 @router.get("/buscar/edicao")
-def obter_revista_por_edicao(q: str, user: dict = Depends(validar_token)):
+def obter_revista_por_edicao(q: int, user: dict = Depends(validar_token)):
     """
     Endpoint para obter a revista buscada pelo seu número de edição.
     """
