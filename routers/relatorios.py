@@ -3,33 +3,11 @@ from supabase import Client
 from datetime import date, timedelta
 
 from services.auth import validar_token, pegar_usuario_admin
-# (Se seus models forem necessários, importe-os aqui)
 
-# Configurações iniciais
 router = APIRouter(
     prefix="/relatorios",
     tags=["Relatórios"]
 )
-
-# ===============================================
-# RELATÓRIOS DE VENDAS
-# ===============================================
-
-@router.get("/vendas/recentes")
-def pegar_relatorio_dia(user = Depends(validar_token)):
-    """ Relatório de vendas recentes (vw_vendas_recentes). """
-    try:
-        supabase_admin = pegar_usuario_admin()
-        recentes = supabase_admin.table("vw_vendas_recentes").select("*").execute()
-        return {
-            "data": recentes.data,
-            "message": "Relatório de vendas recentes gerado com sucesso."
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Algo de errado aconteceu: {str(e)}"
-        )
 
 @router.get("/vendas/dashboard-geral")
 def pegar_dashboard_geral(user = Depends(validar_token)):
@@ -40,18 +18,10 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
     try:
         supabase_admin = pegar_usuario_admin()
 
-        # 1. Vendas de Hoje (para faturamento e contagem)
         vendas_hoje_data = supabase_admin.table("vw_vendas_hoje").select("*").execute().data
-
-        # 2. Vendas da Semana (mv_performance_semanal)
         vendas_semana_data = supabase_admin.table("mv_performance_semanal").select("*").execute().data
-
-        # 3. Ranking de Mais Vendidos (vw_vendas_recentes)
         ranking_data = supabase_admin.table("vw_vendas_recentes").select("*").execute().data
 
-        # --- Processamento ---
-
-        # 1. Processar "hoje"
         total_faturado_hoje = 0
         total_vendas_hoje = 0
         if vendas_hoje_data:
@@ -64,19 +34,15 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
             "vendas_hoje": total_vendas_hoje
         }
 
-        # 2. Processar "semana" (Retorna a lista crua)
         semana_formatado = vendas_semana_data
 
-        # 3. Processar "ticket_medio"
         ticket_medio = 0
         if total_vendas_hoje > 0:
             ticket_medio = total_faturado_hoje / total_vendas_hoje
 
-        # 4. Processar "mais_vendidos" (Agrega e ordena a partir de vendas recentes)
         mais_vendidos_agregado = {}
         if ranking_data:
             for item in ranking_data:
-                # Tenta múltiplas possibilidades de nome de coluna
                 nome_revista = (
                     item.get("nome") or
                     item.get("revista") or
@@ -88,11 +54,9 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
                 qtd = item.get("qtd_vendida", 1)
                 mais_vendidos_agregado[nome_revista] = mais_vendidos_agregado.get(nome_revista, 0) + qtd
 
-        # Ordena o dicionário por valor (qtd) e pega o Top 10
         sorted_ranking = sorted(mais_vendidos_agregado.items(), key=lambda x: x[1], reverse=True)
         mais_vendidos_formatado = dict(sorted_ranking[:10])
 
-        # Montar dashboard final
         dashboard_data = {
             "hoje": dados_hoje_agregado,
             "semana": semana_formatado,
@@ -122,18 +86,15 @@ def pegar_hoje(user = Depends(validar_token)):
     try:
         supabase_admin = pegar_usuario_admin()
 
-        # Primeiro, vamos fazer um select * para ver todas as colunas disponíveis
         vendas_hoje_data = supabase_admin.table("vw_vendas_hoje").select("*").execute().data
 
         faturamento_do_dia = 0
-        ultimas_vendas = {} # Dicionário para {nome: qtd}
+        ultimas_vendas = {}
 
         if vendas_hoje_data:
             for venda in vendas_hoje_data:
-                # 1. Calcula faturamento total
                 faturamento_do_dia += venda.get("valor_total", 0)
 
-                # 2. Agrega vendas por nome de revista
                 nome_revista = (venda.get("revista"))
 
                 qtd = venda.get("qtd_vendida", 1)
@@ -154,7 +115,13 @@ def pegar_hoje(user = Depends(validar_token)):
             detail=f"Algo de errado aconteceu: {str(e)}"
         )
 
-@router.get("/vendas/semana")
+
+# -----------------------------------------------------------------------------
+# Relatórios não sendo usados!!!
+# -----------------------------------------------------------------------------
+
+
+#@router.get("/vendas/semana")
 def pegar_relatorio_semana(user = Depends(validar_token)):
     """ Relatório semanal de vendas (mv_performance_semanal). """
     try:
@@ -170,85 +137,8 @@ def pegar_relatorio_semana(user = Depends(validar_token)):
             detail=f"Algo de errado aconteceu: {str(e)}"
         )
 
-@router.get("/vendas/dashboard-geral")
-def pegar_dashboard_geral(user = Depends(validar_token)):
-    """
-    Endpoint consolidado para os relatórios da tela principal.
-    Estrutura: {hoje:{...}, semana:[...], ticket_medio:valor, mais_vendidos:{...}}
-    """
-    try:
-        supabase_admin = pegar_usuario_admin()
 
-        # 1. Vendas de Hoje (para faturamento e contagem)
-        vendas_hoje_data = supabase_admin.table("vw_vendas_hoje").select("valor_total").execute().data
-
-        # 2. Vendas da Semana (mv_performance_semanal)
-        vendas_semana_data = supabase_admin.table("mv_performance_semanal").select("*").execute().data
-
-        # 3. Ranking de Mais Vendidos (vw_vendas_recentes)
-        # Assumindo que a view tem 'nome' e 'qtd_vendida'
-        ranking_data = supabase_admin.table("vw_vendas_recentes").select("nome, qtd_vendida").execute().data
-
-        # --- Processamento ---
-
-        total_faturado_hoje = 0
-        total_vendas_hoje = 0
-        if vendas_hoje_data:
-            for venda in vendas_hoje_data:
-                total_faturado_hoje += venda.get("valor_total", 0)
-            total_vendas_hoje = len(vendas_hoje_data)
-
-        dados_hoje_agregado = {
-            "faturamento_hoje": total_faturado_hoje,
-            "vendas_hoje": total_vendas_hoje
-        }
-
-
-        ticket_medio = 0
-        if total_vendas_hoje > 0:
-            ticket_medio = total_faturado_hoje / total_vendas_hoje
-
-        # 4. Processar "mais_vendidos" (Agrega e ordena a partir de vendas recentes)
-        mais_vendidos_agregado = {}
-        if ranking_data:
-            for item in ranking_data:
-                nome_revista = item.get("nome")
-                if nome_revista:
-                    qtd = item.get("qtd_vendida", 1)
-                    mais_vendidos_agregado[nome_revista] = mais_vendidos_agregado.get(nome_revista, 0) + qtd
-
-        # Ordena o dicionário por valor (qtd) e pega o Top 10
-        sorted_ranking = sorted(mais_vendidos_agregado.items(), key=lambda x: x[1], reverse=True)
-        mais_vendidos_formatado = dict(sorted_ranking[:10])
-
-        # Montar dashboard final
-        dashboard_data = {
-            "hoje": dados_hoje_agregado,
-            "semana": vendas_semana_data, # <-- Retorna a lista
-            "ticket_medio": ticket_medio,
-            "mais_vendidos": mais_vendidos_formatado
-        }
-
-        return {
-            "data": dashboard_data,
-            "message": "Dashboard geral gerado com sucesso."
-        }
-    except Exception as e:
-        # Passa o erro original para o HTTPException
-        detail_message = f"Algo de errado aconteceu ao gerar o dashboard: {e!s}"
-        print(f"ERRO NO DASHBOARD: {detail_message}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=detail_message
-        )
-
-
-# ===============================================
-# RELATÓRIOS DE DEVOLUÇÕES
-# (Movidos de devolucoes.py)
-# ===============================================
-
-@router.get("/devolucoes/alertas", summary="Alertas de devoluções com data_limite em ≤ N dias")
+#@router.get("/devolucoes/alertas", summary="Alertas de devoluções com data_limite em ≤ N dias")
 async def listar_alertas_devolucoes(
     dias: int = Query(5, ge=0, le=60, description="Janela a partir de hoje (padrão=5)"),
     incluir_vencidas: bool = Query(
@@ -271,7 +161,7 @@ async def listar_alertas_devolucoes(
             .table("chamadasdevolucao")
             .select("id_chamada_devolucao,data_limite,status")
             .eq("id_usuario", user["sub"])
-            .eq("status", "aberta") # Só alertar sobre tarefas abertas
+            .eq("status", "aberta")
         )
 
         if incluir_vencidas:
@@ -285,7 +175,7 @@ async def listar_alertas_devolucoes(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao consultar Supabase: {e!s}")
 
-    saida = [] # Retorna uma lista de dicionários padrão
+    saida = []
 
     for r in rows:
         data_limite_str = r.get("data_limite")
@@ -297,7 +187,7 @@ async def listar_alertas_devolucoes(
 
         saida.append(
             {
-                "id": int(r["id_chamada_devolucao"]), # Renomeando o campo na saída
+                "id": int(r["id_chamada_devolucao"]),
                 "data_limite": enc,
                 "dias_restantes": dias_restantes,
                 "status": r.get("status", "")
@@ -305,3 +195,19 @@ async def listar_alertas_devolucoes(
         )
 
     return saida
+
+#@router.get("/vendas/recentes")
+def pegar_relatorio_dia(user = Depends(validar_token)):
+    """ Relatório de vendas recentes (vw_vendas_recentes). """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        recentes = supabase_admin.table("vw_vendas_recentes").select("*").execute()
+        return {
+            "data": recentes.data,
+            "message": "Relatório de vendas recentes gerado com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )

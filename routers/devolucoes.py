@@ -7,9 +7,7 @@ import json
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
-# Importa a extração do Gemini (como antes)
 from services.extracao_devolucao import processar_pdf_para_json
-# [NOVO] Importa a extração local (PyPDF + Regex)
 from services.extracao import extrair_dados_devolucao_local
 from routers.revistas import pegar_revistas
 
@@ -36,16 +34,13 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
     if not lista_revistas_json:
         return (0, 0)
 
-    # 1. Buscar revistas existentes e criar um mapa de busca
     revistas_banco = pegar_revistas()
     revistas_existentes = revistas_banco.data if revistas_banco and revistas_banco.data else []
 
-    # O mapa usa (nome_normalizado, edicao_str) como chave para busca rápida
     lookup_revistas: Dict[tuple[str, str], dict] = {}
     for rev in revistas_existentes:
         try:
             nome_norm = str(rev.get("nome", "")).strip().lower()
-            # Trata edições nulas como "0" para consistência na chave
             edicao_str = "0" if rev.get("numero_edicao") is None else str(rev.get("numero_edicao"))
             if nome_norm:
                 lookup_revistas[(nome_norm, edicao_str)] = rev
@@ -68,8 +63,8 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
             resposta_insert = supabase_admin.table("revistas").insert({
                 "nome": nome_revista,
                 "numero_edicao": edicao_revista,
-                "codigo_barras": revista.get("codigo_barras"), # Salva se a IA extraiu
-                "qtd_estoque": 0, # <-- LÓGICA CORRETA: Estoque é 0
+                "codigo_barras": revista.get("codigo_barras"),
+                "qtd_estoque": 0,
                 "preco_capa": revista.get("preco_capa", 0.0),
                 "preco_liquido": revista.get("preco_liquido", 0.0)
             }).execute()
@@ -77,20 +72,16 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
             revista_criada = resposta_insert.data[0]
             return revista_criada
         except Exception as e:
-            # Pega erros de violação de constraint (ex: codigo_barras duplicado)
             if "violates unique constraint" in str(e):
                 print(f"AVISO: Revista legada '{nome_revista}' não criada, provável código de barras duplicado. Erro: {e}")
-                # Tenta buscar pelo código de barras como alternativa
                 resp = supabase_admin.table("revistas").select("id_revista").eq("codigo_barras", revista.get("codigo_barras")).execute()
                 if resp.data:
-                    return resp.data[0] # Retorna a revista que já tem aquele código
-
+                    return resp.data[0]
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao inserir revista legada: {e}; Revista: {revista}")
 
     def inserir_relacao_chamada(id_revista, revista):
         """Associa a revista à devolução com a quantidade a ser devolvida."""
         try:
-            # 'qtd_estoque' do JSON (extraído da coluna 'Rep') é a qtd a devolver
             qtd_a_devolver = revista.get("qtd_estoque", 0)
 
             supabase_admin.table("revistas_chamadasdevolucao").insert({
@@ -103,7 +94,6 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao inserir relação entre revista e chamada: {e}; ID da revista: {id_revista}; Revista: {revista}")
 
-    # 2. Iterar sobre as revistas do JSON (da Devolução)
     for revista_json in lista_revistas_json:
         try:
             nome = str(revista_json.get("nome", "")).strip()
@@ -118,26 +108,19 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
 
             id_revista_final = None
 
-            # --- Lógica Principal: Verificar se existe ---
             chave_busca = (nome_normalizado, edicao_str)
             revista_existente = lookup_revistas.get(chave_busca)
 
             if revista_existente:
-                # --- CASO 1: REVISTA EXISTE ---
-                # Apenas pega o ID. Não faz NADA com o estoque.
                 id_revista_final = revista_existente["id_revista"]
 
             else:
-                # --- CASO 2: REVISTA NÃO EXISTE ---
-                # Insere a nova revista (legada) no banco com estoque 0
                 nova_revista = inserir_revista_legada(revista_json)
                 id_revista_final = nova_revista["id_revista"]
                 novas_revistas_criadas += 1
 
-                # Adiciona ao mapa local para evitar duplicatas na mesma execução
                 lookup_revistas[chave_busca] = nova_revista
 
-            # --- 3. Associar à Tabela de Relacionamento ---
             if id_revista_final:
                 inserir_relacao_chamada(id_revista_final, revista_json)
                 revistas_associadas += 1
@@ -165,11 +148,8 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado está vazio.")
 
     try:
-        # --- [NOVO] INÍCIO DA PRÉ-VERIFICAÇÃO LOCAL ---
-        # 1. Extrai data localmente (sem Gemini)
         data_limite_iso_local = extrair_dados_devolucao_local(arquivo_bytes)
 
-        # 2. Verifica duplicatas no banco
         resposta_duplicata = (
             supabase_admin.table("chamadasdevolucao")
             .select("id_chamada_devolucao")
@@ -184,19 +164,14 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
                 detail=f"Chamada de devolução duplicada. Já existe um cadastro com data limite {data_limite_iso_local}.",
             )
     except ValueError as e:
-        # Falha na extração local (PDF ilegível ou formato inesperado)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro na pré-verificação do PDF: {e}")
     except HTTPException as e:
-        raise e # Propaga a exceção 409
+        raise e
     except Exception as e:
-        # Falha na consulta de verificação
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao verificar duplicatas: {e}")
-    # --- [NOVO] FIM DA PRÉ-VERIFICAÇÃO LOCAL ---
 
 
-    # --- Processamento Gemini (só ocorre se a pré-verificação passar) ---
     try:
-        # 1. Chama o Gemini para extração completa
         chamada_json = processar_pdf_para_json(arquivo_bytes)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro ao processar PDF (IA): {str(e)}")
@@ -207,7 +182,6 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
             detail="O conteúdo do JSON (IA) é inválido. A chave 'chamadasdevolucao' é obrigatória."
         )
 
-    # 2. Insere o documento principal (com dados do Gemini)
     try:
         cd = chamada_json.get("chamadasdevolucao")
         if cd is None:
@@ -218,7 +192,6 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
         if not dl_gemini:
             raise KeyError(f"Campo 'data_limite' é obrigatório (IA).")
 
-        # [REMOVIDO] Bloco de verificação de duplicata movido para cima.
 
         dados_chamada = {
             "id_usuario": user["sub"],
@@ -239,7 +212,6 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
         detail = f"Erro geral ao inserir devolução: {e}"
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
-    # 3. Cadastra as revistas (lógica inalterada)
     revistas_inseridas, revistas_associadas = _cadastrar_revistas_db(chamada_json, supabase_admin, id_devolucao_criada)
 
     return {
@@ -251,7 +223,6 @@ async def cadastrar_devolucao(file: UploadFile = File(...), user: dict = Depends
         "message": "Devolução (Chamada) registrada com status 'aberta'. Estoque não alterado."
     }
 
-# --- ENDPOINT ETAPA 2 (LÓGICA ALTERADA CONFORME SEU PEDIDO) ---
 @router.post("/{id_devolucao}/confirmar", status_code=status.HTTP_200_OK)
 async def confirmar_devolucao(
     id_devolucao: int = Path(..., title="ID da Devolução a ser confirmada", ge=1),
@@ -265,10 +236,9 @@ async def confirmar_devolucao(
     """
 
     try:
-        # 1. Apenas atualiza o status
         resposta_update = supabase_admin.table("chamadasdevolucao").update(
             {"status": "fechada"}
-        ).eq("id_chamada_devolucao", id_devolucao).eq("id_usuario", user["sub"]).execute() # Garante que só o dono feche
+        ).eq("id_chamada_devolucao", id_devolucao).eq("id_usuario", user["sub"]).execute()
 
         if not resposta_update.data:
              raise HTTPException(status_code=404, detail="Devolução não encontrada ou não pertence a este usuário.")
@@ -286,9 +256,7 @@ async def confirmar_devolucao(
         "message": "Devolução confirmada e movida para 'fechada'."
     }
 
-# --- ENDPOINTS DE LISTAGEM (Consulta) ---
 
-# CORREÇÃO DO ERRO 500: Removido o `response_model` que estava causando o ResponseValidationError
 @router.get("/listar-devolucoes-usuario")
 async def listar_devolucoes_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
     """
@@ -302,7 +270,6 @@ async def listar_devolucoes_por_usuario(user: dict = Depends(validar_token), sup
             .order("data_limite", desc=True)
             .execute()
         )
-        # Retorna os dados brutos do banco (lista)
         return resposta.data
 
     except Exception as e:
@@ -312,10 +279,6 @@ async def listar_devolucoes_por_usuario(user: dict = Depends(validar_token), sup
             detail="Ocorreu um erro ao buscar as devoluções."
         )
 
-# --- ENDPOINT DE RELATÓRIO MOVIDO PARA relatorios.py ---
-# /alertas
-
-# CORREÇÃO DO ERRO 500: Removido o `response_model`
 @router.get("/{id_devolucao}")
 async def get_devolucao_por_id(id_devolucao: int, user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
     """
@@ -326,9 +289,9 @@ async def get_devolucao_por_id(id_devolucao: int, user: dict = Depends(validar_t
     try:
         resposta = (
             supabase_admin.table("chamadasdevolucao")
-            .select("*, revistas_chamadasdevolucao(*, revistas(nome, numero_edicao))") # Join
+            .select("*, revistas_chamadasdevolucao(*, revistas(nome, numero_edicao))")
             .eq("id_chamada_devolucao", id_devolucao)
-            .eq("id_usuario", user["sub"]) # Garantir que o usuário só veja o dele
+            .eq("id_usuario", user["sub"])
             .single()
             .execute()
         )
@@ -342,7 +305,6 @@ async def get_devolucao_por_id(id_devolucao: int, user: dict = Depends(validar_t
         msg = str(e)
         if isinstance(e, HTTPException):
             raise e
-        # O erro "JSON object requested" acontece quando .single() não encontra nada
         if "No rows" in msg or "multiple (or no) rows returned" in msg or "JSON object requested" in msg:
             raise HTTPException(status_code=404, detail=f"Devolução {id_devolucao} não encontrada ou não pertence a este usuário.")
         raise HTTPException(status_code=500, detail=msg)

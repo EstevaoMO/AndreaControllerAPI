@@ -8,7 +8,6 @@ from services.auth import validar_token
 
 from rapidfuzz import fuzz
 
-# Configurações iniciais
 router = APIRouter(
     prefix="/revistas",
     tags=["Revistas"]
@@ -19,7 +18,6 @@ supabase: Client = create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)
 
 def pegar_revistas():
     try:
-        # Coleta todas as revistas do banco de dados
         dados = supabase.table("revistas").select("id_revista, nome, apelido_revista, numero_edicao, codigo_barras, qtd_estoque, preco_capa, preco_liquido", "url_revista").execute()
         return dados
     except Exception as e:
@@ -45,17 +43,13 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
 
     revistas = []
     for item in dados.data:
-        # Cálculo da similaridade usando RapidFuzz, usando .lower e .strip para melhorar a correspondência
         scores = [
             fuzz.token_sort_ratio(str(q).lower().strip(), str(item["nome"]).lower().strip()),
             fuzz.token_sort_ratio(str(q).lower().strip(), str(item.get("apelido_revista") or "").lower().strip())
         ]
-
-        # Já que nome e apelido são considerados ao mesmo tempo, pega apenas o maior valor de similaridade
         max_score = max(scores)
 
         if max_score >= 70:
-            # Considera uma correspondência válida se a similaridade for 70 ou mais e adiciona a revista na lista de resultados
             revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
@@ -89,40 +83,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
 
     for item in dados.data:
-        # Busca exata pelo código de barras, removendo espaços em branco com .strip
         if str(item["codigo_barras"]).strip() == str(q).strip():
-            revista = RevistaResposta(
-                id_revista=item["id_revista"],
-                nome=item["nome"],
-                apelido_revista=item.get("apelido_revista", ""),
-                numero_edicao=item["numero_edicao"],
-                codigo_barras=item["codigo_barras"],
-                qtd_estoque=item["qtd_estoque"],
-                preco_capa=item["preco_capa"],
-                preco_liquido=item["preco_liquido"] 
-            )
-            return {
-                "data": revista,
-                "message": "Revista encontrada com sucesso."
-            }
-
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o código de barras fornecido.")
-
-@router.get("/buscar/edicao")
-def obter_revista_por_edicao(q: int, user: dict = Depends(validar_token)):
-    """
-    Endpoint para obter a revista buscada pelo seu número de edição.
-    """
-
-    dados = pegar_revistas()
-
-    if not dados.data:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada no banco de dados.")
-
-    revistas = []
-    for item in dados.data:
-        # Busca exata pelo número de edição, removendo espaços em branco com .strip
-        if str(item["numero_edicao"]).strip() == str(q).strip():
             revista = RevistaResposta(
                 id_revista=item["id_revista"],
                 nome=item["nome"],
@@ -133,15 +94,12 @@ def obter_revista_por_edicao(q: int, user: dict = Depends(validar_token)):
                 preco_capa=item["preco_capa"],
                 preco_liquido=item["preco_liquido"]
             )
-            revistas.append(revista) # Como mais de uma revista pode ter a mesma edição, adiciona na lista
+            return {
+                "data": revista,
+                "message": "Revista encontrada com sucesso."
+            }
 
-    if not revistas:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o número de edição fornecido.")
-
-    return {
-        "data": revistas,
-        "message": "Revistas encontradas com sucesso."
-    }
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Nenhuma revista encontrada com o código de barras fornecido.")
 
 @router.post("/cadastrar-foto")
 async def upload_image(codigo: str, imagem: UploadFile = File(...), user: dict = Depends(validar_token)):
@@ -156,7 +114,6 @@ async def upload_image(codigo: str, imagem: UploadFile = File(...), user: dict =
             file_options={"content-type": imagem.content_type or "image/jpeg"})
         url = supabase.storage.from_(st.BUCKET_REVISTAS).get_public_url(caminho)
 
-        # Atualizar a URL na tabela
         response = supabase.table("revistas").update({
             'url_revista': url
         }).eq('id_revista', codigo).execute()

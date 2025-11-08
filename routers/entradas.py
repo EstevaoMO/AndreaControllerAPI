@@ -7,16 +7,14 @@ import json
 from models.chamada_model import ChamadaDevolucaoResposta
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
-# Importa a extração do Gemini (como antes)
 from services.extracao_entrada import processar_pdf_para_json
-# [NOVO] Importa a extração local (PyPDF + Regex)
 from services.extracao import extrair_dados_entrada_local
 from routers.revistas import pegar_revistas
 
 
 router = APIRouter(
     prefix="/entregas",
-    tags=["Entregas"] # Mantido como Entregas (para o novo padrão "Entrada")
+    tags=["Entregas"]
 )
 
 st = importar_configs()
@@ -35,11 +33,9 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
     if not lista_revistas_json:
         return (0, 0)
 
-    # 1. Buscar revistas existentes e criar um mapa de busca
     revistas_banco = pegar_revistas()
     revistas_existentes = revistas_banco.data if revistas_banco and revistas_banco.data else []
 
-    # O mapa usa (nome_normalizado, edicao_str) como chave para busca rápida
     lookup_revistas: Dict[tuple[str, str], dict] = {}
     for rev in revistas_existentes:
         try:
@@ -53,10 +49,8 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
     inseridas = 0
     atualizadas = 0
 
-    # 2. Iterar sobre as revistas do JSON (Nota de Entrada)
     for revista_data in lista_revistas_json:
         try:
-            # --- Limpeza dos dados do JSON ---
             nome = str(revista_data.get("nome", "")).strip()
             if not nome:
                 print("Aviso: Ignorando revista sem nome no JSON.")
@@ -64,7 +58,7 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
 
             nome_normalizado = nome.lower()
 
-            # Garantir que numero_edicao seja tratado como string para a chave
+
             numero_edicao_json = revista_data.get("numero_edicao")
             if numero_edicao_json is None:
                 numero_edicao_str = "0"
@@ -82,13 +76,10 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
 
             id_revista_processada = None
 
-            # --- Lógica Principal: Verificar se existe ---
             chave_busca = (nome_normalizado, numero_edicao_str)
             revista_existente = lookup_revistas.get(chave_busca)
 
             if revista_existente:
-                # --- CASO 1: REVISTA EXISTE ---
-                # Atualiza o estoque somando a quantidade nova
                 try:
                     id_revista_existente = revista_existente["id_revista"]
                     estoque_atual = int(revista_existente.get("qtd_estoque") or 0)
@@ -101,7 +92,6 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
                     id_revista_processada = id_revista_existente
                     atualizadas += 1
 
-                    # Atualiza o mapa local para consistência na mesma execução
                     lookup_revistas[chave_busca]["qtd_estoque"] = novo_estoque
 
                 except Exception as e:
@@ -109,16 +99,13 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
                     continue
 
             else:
-                # --- CASO 2: REVISTA NÃO EXISTE ---
-                # Insere a nova revista no banco
                 try:
                     revista_para_inserir = {
                         "nome": nome,
                         "numero_edicao": numero_edicao_int,
-                        "qtd_estoque": qtd_nova, # Estoque inicial é a quantidade da nota
+                        "qtd_estoque": qtd_nova,
                         "preco_capa": preco_capa,
-                        "url_revista": revista_data.get("url_revista") # (normalmente null)
-                        # preco_liquido e codigo_barras serão null por padrão
+                        "url_revista": revista_data.get("url_revista")
                     }
 
                     revista_inserida_resp = supabase_admin.table("revistas").insert(revista_para_inserir).execute()
@@ -127,15 +114,12 @@ def _cadastrar_revistas_db(entrega_json: Dict[str, Any], supabase_admin: Client,
                     id_revista_processada = nova_revista["id_revista"]
                     inseridas += 1
 
-                    # Adiciona ao mapa local para evitar duplicatas na mesma execução
                     lookup_revistas[chave_busca] = nova_revista
 
                 except Exception as e:
                     print(f"ERRO: Falha ao INSERIR nova revista '{nome}' (Ed: {numero_edicao_str}). Erro: {e}")
                     continue
 
-            # --- 3. Associar à Tabela de Relacionamento ---
-            # (Isso acontece tanto para revistas novas quanto atualizadas)
             if id_revista_processada:
                 try:
                     supabase_admin.table("revistas_documentos_entrega").insert({
@@ -164,11 +148,8 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="O arquivo enviado está vazio.")
 
     try:
-        # --- [NOVO] INÍCIO DA PRÉ-VERIFICAÇÃO LOCAL ---
-        # 1. Extrai data e PDV localmente (sem Gemini)
         (data_iso_local, pv_id_local) = extrair_dados_entrada_local(arquivo_bytes)
 
-        # 2. Verifica duplicatas no banco
         resposta_duplicata = (
             supabase_admin.table("documentos_entrega")
             .select("id_documento_entrega")
@@ -183,19 +164,14 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
                 detail=f"Documento de entrega duplicado. Já existe um cadastro para o PDV {pv_id_local} na data {data_iso_local}.",
             )
     except ValueError as e:
-        # Falha na extração local (PDF ilegível ou formato inesperado)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro na pré-verificação do PDF: {e}")
     except HTTPException as e:
-        raise e # Propaga a exceção 409
+        raise e
     except Exception as e:
-        # Falha na consulta de verificação
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro ao verificar duplicatas: {e}")
-    # --- [NOVO] FIM DA PRÉ-VERIFICAÇÃO LOCAL ---
 
 
-    # --- Processamento Gemini (só ocorre se a pré-verificação passar) ---
     try:
-        # 1. Chama o Gemini para extração completa
         entrega_json = processar_pdf_para_json(arquivo_bytes)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro ao processar PDF (IA): {str(e)}")
@@ -206,13 +182,11 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
             detail="O conteúdo do JSON (IA) é inválido. A chave 'notasentrega' é obrigatória."
         )
 
-    # 2. Insere o documento principal (com dados do Gemini)
     try:
         cd = entrega_json.get("notasentrega")
         if cd is None:
             raise KeyError("notasentrega")
 
-        # campos esperados do Gemini
         nota_id_gemini = cd.get("nota_entrega_id")
         data_gemini = cd.get("data")
 
@@ -228,7 +202,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
         data_iso_gemini = datetime.strptime(data_gemini, "%Y-%m-%d").date().isoformat()
 
-        # [REMOVIDO] Bloco de verificação de duplicata movido para cima.
 
         dados_entrega = {
             "id_usuario": user["sub"],
@@ -253,7 +226,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
 
-    # 3. Cadastra as revistas (lógica inalterada)
     revistas_inseridas, revistas_atualizadas = _cadastrar_revistas_db(entrega_json, supabase_admin, id_entrega_criada)
 
     return {
@@ -265,7 +237,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         "message": "Entrega criada e estoque de revistas atualizado com sucesso."
     }
 
-# CORREÇÃO DO ERRO 500: Removido o response_model que estava causando o ResponseValidationError
 @router.get("/listar-entradas-usuario")
 async def listar_entradas_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
     """
@@ -279,7 +250,6 @@ async def listar_entradas_por_usuario(user: dict = Depends(validar_token), supab
             .order("data_entrega", desc=True)
             .execute()
         )
-        # Retorna os dados brutos do banco (lista)
         return resposta.data
 
     except Exception as e:
@@ -298,9 +268,9 @@ async def get_entrega_por_id(id_entrega: int = Path(..., title="ID do Documento 
     try:
         resposta = (
             supabase_admin.table("documentos_entrega")
-            .select(", revistas_documentos_entrega(, revistas(nome, numero_edicao))") # Join
+            .select("*, revistas_documentos_entrega(*, revistas(nome, numero_edicao))")
             .eq("id_documento_entrega", id_entrega)
-            .eq("id_usuario", user["sub"]) # Garantir que o usuário só veja o dele
+            .eq("id_usuario", user["sub"])
             .single()
             .execute()
         )
@@ -314,7 +284,6 @@ async def get_entrega_por_id(id_entrega: int = Path(..., title="ID do Documento 
         msg = str(e)
         if isinstance(e, HTTPException):
             raise e
-        # O erro "JSON object requested" acontece quando .single() não encontra nada
         if "No rows" in msg or "multiple (or no) rows returned" in msg or "JSON object requested" in msg:
             raise HTTPException(status_code=404, detail=f"Documento de entrega {id_entrega} não encontrado ou não pertence a este usuário.")
         raise HTTPException(status_code=500, detail=msg)

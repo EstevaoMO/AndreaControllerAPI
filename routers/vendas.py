@@ -6,8 +6,7 @@ from models.venda_model import VendaFormularioCodBarras, VendaFormularioId
 
 from settings.settings import importar_configs
 from services.auth import validar_token, pegar_usuario_admin
-# CORREÇÃO: Removida a importação de 'pegar_revistas' que estava causando o TypeError
-# from routers.revistas import pegar_revistas
+
 
 # Configurações iniciais
 router = APIRouter(
@@ -24,9 +23,6 @@ def _atualizar_contagem_devolucao(supabase_admin: Client, id_revista_vendida: st
     decrementando 'qtd_a_devolver' com base na venda realizada.
     """
     try:
-        # --- CORREÇÃO NA CONSULTA ---
-        # 1. Trocamos 'id_revista_chamada' por 'id_chamada_devolucao'
-        # 2. Adicionamos a consulta na tabela 'chamadasdevolucao' (via join) para filtrar pelo 'id_usuario'
         chamadas_pendentes = supabase_admin.table("revistas_chamadasdevolucao") \
                     .select("id_chamada_devolucao, qtd_a_devolver") \
                     .eq("id_revista", id_revista_vendida) \
@@ -86,11 +82,6 @@ def pegar_vendas(user = Depends(validar_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
 
-# --- ENDPOINTS DE RELATÓRIO MOVIDOS PARA relatorios.py ---
-# /recentes
-# /hoje
-# /relatorio-semana
-# /dashboard-geral
 
 @router.post("/cadastrar-venda-por-codigo")
 def cadastrar_venda_codigo(venda: VendaFormularioCodBarras, user: dict = Depends(validar_token)):
@@ -127,7 +118,6 @@ def cadastrar_venda_codigo(venda: VendaFormularioCodBarras, user: dict = Depends
     # --- FIM DA LÓGICA DE BUSCA ---
 
 
-    # --- ATUALIZAÇÃO DE ESTOQUE (TABELA 'revistas') ---
     estoque_atual = revista_encontrada.get("qtd_estoque", 0)
     qtd_vendida_nesta_transacao = venda.qtd_vendida
 
@@ -164,9 +154,8 @@ def cadastrar_venda_codigo(venda: VendaFormularioCodBarras, user: dict = Depends
     resposta_insert = supabase_admin.table("vendas").insert(dados_venda).execute()
 
     if not resposta_insert.data:
-        # Se a inserção da venda falhar, reverter o estoque
         supabase_admin.table("revistas").update(
-            {"qtd_estoque": estoque_atual} # Reverte para o estoque antigo
+            {"qtd_estoque": estoque_atual}
         ).eq("id_revista", id_revista).execute()
 
         raise HTTPException(
@@ -174,7 +163,6 @@ def cadastrar_venda_codigo(venda: VendaFormularioCodBarras, user: dict = Depends
             detail="Erro ao cadastrar a venda no banco (estoque revertido)."
         )
 
-    # --- ATUALIZAÇÃO DA CONTAGEM DE DEVOLUÇÃO (TABELA 'revistas_chamadasdevolucao') ---
     _atualizar_contagem_devolucao(
         supabase_admin=supabase_admin,
         id_revista_vendida=id_revista,
@@ -219,7 +207,6 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
             detail=f"Revista com o id {venda.id_revista} não existe no banco de dados."
         )
 
-    # --- ATUALIZAÇÃO DE ESTOQUE (TABELA 'revistas') ---
     estoque_atual = revista_encontrada.get("qtd_estoque", 0)
     qtd_vendida_nesta_transacao = venda.qtd_vendida
 
@@ -241,7 +228,6 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
             detail=f"Erro ao atualizar o estoque da revista: {str(e)}"
         )
 
-    # --- REGISTRO DA VENDA (TABELA 'vendas') ---
     dados_venda = {
         "id_usuario": user["sub"],
         "metodo_pagamento": venda.metodo_pagamento,
@@ -255,7 +241,6 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
     resposta_insert = supabase_admin.table("vendas").insert(dados_venda).execute()
 
     if not resposta_insert.data:
-        # Reverte o estoque se a venda falhar
         supabase_admin.table("revistas").update(
             {"qtd_estoque": estoque_atual}
         ).eq("id_revista", id_revista).execute()
@@ -265,7 +250,7 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
             detail="Erro ao cadastrar a venda no banco (estoque revertido)."
         )
 
-    # --- ATUALIZAÇÃO DA CONTAGEM DE DEVOLUÇÃO (TABELA 'revistas_chamadasdevolucao') ---
+
     _atualizar_contagem_devolucao(
         supabase_admin=supabase_admin,
         id_revista_vendida=id_revista,
@@ -282,4 +267,3 @@ def cadastrar_venda_id(venda: VendaFormularioId, user: dict = Depends(validar_to
     )
 
 
-# =============== RELATÓRIOS (MOVIDOS) ===============
