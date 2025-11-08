@@ -15,5 +15,5 @@ class RevistaResposta(BaseModel):
 # Modelo de body para receber uma revista no endpoint de cadastrar código de barras
 class CadastrarCodigoRevista(BaseModel):
     nome: str
-    numero_edicao: str
+    numero_edicao: int
     codigo_barras: str
