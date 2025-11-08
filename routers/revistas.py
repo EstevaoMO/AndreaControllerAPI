@@ -99,7 +99,7 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
                 codigo_barras=item["codigo_barras"],
                 qtd_estoque=item["qtd_estoque"],
                 preco_capa=item["preco_capa"],
-                preco_liquido=item["preco_liquido"]
+                preco_liquido=item["preco_liquido"] 
             )
             return {
                 "data": revista,
