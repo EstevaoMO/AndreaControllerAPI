@@ -94,7 +94,7 @@ def pegar_hoje(user = Depends(validar_token)):
 
         dados_hoje = {
             "faturamento_do_dia": faturamento_do_dia,
-            "vendas_hoje": vendas_hoje_data
+            "ultimas_vendas": vendas_hoje_data
         }
 
         return {
