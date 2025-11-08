@@ -10,6 +10,7 @@ class RevistaResposta(BaseModel):
     qtd_estoque: int
     preco_capa: float
     preco_liquido: float | None = None
+    url_revista: str | None  = None
     score: float | None = None
 
 # Modelo de body para receber uma revista no endpoint de cadastrar código de barras

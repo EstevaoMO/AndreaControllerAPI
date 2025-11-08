@@ -80,8 +80,7 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
 @router.get("/vendas/hoje")
 def pegar_hoje(user = Depends(validar_token)):
     """
-    Relatório de vendas de hoje (vw_vendas_hoje).
-    Estrutura de retorno: {faturamento_do_dia: valor, ultimas_vendas: {nome: qtd}}
+    Relatório de vendas de hoje (vw_vendas_hoje)
     """
     try:
         supabase_admin = pegar_usuario_admin()
@@ -89,20 +88,13 @@ def pegar_hoje(user = Depends(validar_token)):
         vendas_hoje_data = supabase_admin.table("vw_vendas_hoje").select("*").execute().data
 
         faturamento_do_dia = 0
-        ultimas_vendas = {}
-
         if vendas_hoje_data:
             for venda in vendas_hoje_data:
                 faturamento_do_dia += venda.get("valor_total", 0)
 
-                nome_revista = (venda.get("revista"))
-
-                qtd = venda.get("qtd_vendida", 1)
-                ultimas_vendas[nome_revista] = ultimas_vendas.get(nome_revista, 0) + qtd
-
         dados_hoje = {
             "faturamento_do_dia": faturamento_do_dia,
-            "ultimas_vendas": ultimas_vendas
+            "vendas_hoje": vendas_hoje_data
         }
 
         return {

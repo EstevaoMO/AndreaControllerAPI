@@ -18,7 +18,7 @@ supabase: Client = create_client(st.SUPABASE_URL, st.SUPABASE_API_KEY)
 
 def pegar_revistas():
     try:
-        dados = supabase.table("revistas").select("id_revista, nome, apelido_revista, numero_edicao, codigo_barras, qtd_estoque, preco_capa, preco_liquido", "url_revista").execute()
+        dados = supabase.table("revistas").select("id_revista, nome, apelido_revista, numero_edicao, codigo_barras, qtd_estoque, preco_capa, preco_liquido, url_revista").execute()
         return dados
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao acessar o banco de dados: {str(e)}")
@@ -59,6 +59,7 @@ def obter_revistas_por_nome_ou_apelido(q: str, user: dict = Depends(validar_toke
                 qtd_estoque=item["qtd_estoque"],
                 preco_capa=item["preco_capa"],
                 preco_liquido=item["preco_liquido"],
+                url_revista=item["url_revista"],
                 score=max_score
             )
             revistas.append(revista)
@@ -92,7 +93,8 @@ def obter_revista_por_codigo_barras(q: str, user: dict = Depends(validar_token))
                 codigo_barras=item["codigo_barras"],
                 qtd_estoque=item["qtd_estoque"],
                 preco_capa=item["preco_capa"],
-                preco_liquido=item["preco_liquido"]
+                preco_liquido=item["preco_liquido"],
+                url_revista=item["url_revista"]
             )
             return {
                 "data": revista,
