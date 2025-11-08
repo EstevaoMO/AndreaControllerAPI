@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, HTTPException, File, Depends, status
+from fastapi import APIRouter, UploadFile, HTTPException, File, Depends, status, Path
 from datetime import datetime
 from supabase import Client
 from typing import List, Dict, Any
@@ -16,7 +16,7 @@ from routers.revistas import pegar_revistas
 
 router = APIRouter(
     prefix="/entregas",
-    tags=["Entregas"] # Mantido como Entregas (para o seu novo padrão "Entrada")
+    tags=["Entregas"] # Mantido como Entregas (para o novo padrão "Entrada")
 )
 
 st = importar_configs()
@@ -265,7 +265,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         "message": "Entrega criada e estoque de revistas atualizado com sucesso."
     }
 
-# CORREÇÃO DO ERRO 500: Removido o `response_model` que estava causando o ResponseValidationError
+# CORREÇÃO DO ERRO 500: Removido o response_model que estava causando o ResponseValidationError
 @router.get("/listar-entradas-usuario")
 async def listar_entradas_por_usuario(user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
     """
@@ -288,3 +288,33 @@ async def listar_entradas_por_usuario(user: dict = Depends(validar_token), supab
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocorreu um erro ao buscar as devoluções."
         )
+
+@router.get("/{id_entrega}")
+async def get_entrega_por_id(id_entrega: int = Path(..., title="ID do Documento de Entrega", ge=1), user: dict = Depends(validar_token), supabase_admin: Client = Depends(pegar_usuario_admin)):
+    """
+    Retorna os dados de um documento de entrega pelo ID,
+    incluindo as revistas associadas (join).
+    """
+    try:
+        resposta = (
+            supabase_admin.table("documentos_entrega")
+            .select(", revistas_documentos_entrega(, revistas(nome, numero_edicao))") # Join
+            .eq("id_documento_entrega", id_entrega)
+            .eq("id_usuario", user["sub"]) # Garantir que o usuário só veja o dele
+            .single()
+            .execute()
+        )
+
+        if not resposta.data:
+            raise HTTPException(status_code=404, detail=f"Documento de entrega {id_entrega} não encontrado ou não pertence a este usuário.")
+
+        return resposta.data
+
+    except Exception as e:
+        msg = str(e)
+        if isinstance(e, HTTPException):
+            raise e
+        # O erro "JSON object requested" acontece quando .single() não encontra nada
+        if "No rows" in msg or "multiple (or no) rows returned" in msg or "JSON object requested" in msg:
+            raise HTTPException(status_code=404, detail=f"Documento de entrega {id_entrega} não encontrado ou não pertence a este usuário.")
+        raise HTTPException(status_code=500, detail=msg)

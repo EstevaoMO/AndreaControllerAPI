@@ -183,8 +183,6 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
         vendas_hoje_data = supabase_admin.table("vw_vendas_hoje").select("valor_total").execute().data
 
         # 2. Vendas da Semana (mv_performance_semanal)
-        # CORREÇÃO: Voltando a usar select("*") para evitar o erro "dia_semana does not exist".
-        # Vamos retornar a lista crua, como o código original fazia.
         vendas_semana_data = supabase_admin.table("mv_performance_semanal").select("*").execute().data
 
         # 3. Ranking de Mais Vendidos (vw_vendas_recentes)
@@ -193,7 +191,6 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
 
         # --- Processamento ---
 
-        # 1. Processar "hoje"
         total_faturado_hoje = 0
         total_vendas_hoje = 0
         if vendas_hoje_data:
@@ -206,10 +203,7 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
             "vendas_hoje": total_vendas_hoje
         }
 
-        # 2. Processar "semana" (CORRIGIDO: Retornando a lista crua)
-        semana_formatado = vendas_semana_data
 
-        # 3. Processar "ticket_medio"
         ticket_medio = 0
         if total_vendas_hoje > 0:
             ticket_medio = total_faturado_hoje / total_vendas_hoje
@@ -230,7 +224,7 @@ def pegar_dashboard_geral(user = Depends(validar_token)):
         # Montar dashboard final
         dashboard_data = {
             "hoje": dados_hoje_agregado,
-            "semana": semana_formatado, # <-- Retorna a lista
+            "semana": vendas_semana_data, # <-- Retorna a lista
             "ticket_medio": ticket_medio,
             "mais_vendidos": mais_vendidos_formatado
         }
