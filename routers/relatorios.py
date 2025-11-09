@@ -292,6 +292,26 @@ def pegar_top5_revistas_hoje(user = Depends(validar_token)):
             detail=f"Algo de errado aconteceu: {str(e)}"
         )
 
+@router.get("/grafico/top5-revistas-7d")
+def pegar_top5_revistas_hoje(user = Depends(validar_token)):
+    """
+    Gráfico: Top 5 revistas mais vendidas nos últimos 7 dias (vw_chart_top5_vendidas_7d)
+    Recomendado: Gráfico de Barras Horizontais
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_chart_top5_vendidas_7d").select("*").execute().data
+        
+        return {
+            "data": resultado if resultado else [],
+            "message": "Top 5 revistas vendidas nos últimos 7 dias obtido com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
 
 @router.get("/grafico/vendas-por-pagamento-30d")
 def pegar_vendas_por_pagamento_30d(user = Depends(validar_token)):
