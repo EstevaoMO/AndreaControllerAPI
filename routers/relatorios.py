@@ -107,6 +107,213 @@ def pegar_hoje(user = Depends(validar_token)):
             detail=f"Algo de errado aconteceu: {str(e)}"
         )
 
+@router.get("/kpi/faturamento-hoje")
+def pegar_faturamento_hoje(user = Depends(validar_token)):
+    """
+    KPI: Faturamento do dia atual (vw_kpi_faturamento_hoje)
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_kpi_faturamento_hoje").select("*").execute().data
+        
+        faturamento = 0
+        if resultado and len(resultado) > 0:
+            faturamento = resultado[0].get("faturamento_hoje", 0)
+        
+        return {
+            "data": {
+                "faturamento_hoje": faturamento
+            },
+            "message": "Faturamento de hoje obtido com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
+
+@router.get("/kpi/unidades-hoje")
+def pegar_unidades_hoje(user = Depends(validar_token)):
+    """
+    KPI: Unidades vendidas no dia atual (vw_kpi_unidades_hoje)
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_kpi_unidades_hoje").select("*").execute().data
+        
+        unidades = 0
+        if resultado and len(resultado) > 0:
+            unidades = resultado[0].get("unidades_vendidas_hoje", 0)
+        
+        return {
+            "data": {
+                "unidades_vendidas_hoje": unidades
+            },
+            "message": "Unidades vendidas hoje obtidas com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
+
+@router.get("/kpi/devolucoes-pendentes")
+def pegar_devolucoes_pendentes(user = Depends(validar_token)):
+    """
+    KPI: Quantidade de devoluções pendentes (vw_kpi_devolucoes_pendentes)
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_kpi_devolucoes_pendentes").select("*").execute().data
+        
+        devolucoes = 0
+        if resultado and len(resultado) > 0:
+            devolucoes = resultado[0].get("devolucoes_pendentes", 0)
+        
+        return {
+            "data": {
+                "devolucoes_pendentes": devolucoes
+            },
+            "message": "Devoluções pendentes obtidas com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
+
+@router.get("/kpi/proxima-devolucao")
+def pegar_proxima_devolucao(user = Depends(validar_token)):
+    """
+    KPI: Próxima data limite de devolução (vw_kpi_proxima_devolucao)
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_kpi_proxima_devolucao").select("*").execute().data
+        
+        proxima_data = None
+        if resultado and len(resultado) > 0:
+            proxima_data = resultado[0].get("proxima_data_limite")
+        
+        return {
+            "data": {
+                "proxima_data_limite": proxima_data
+            },
+            "message": "Próxima data limite de devolução obtida com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
+
+@router.get("/kpi/faturamento-30d")
+def pegar_faturamento_30d(user = Depends(validar_token)):
+    """
+    KPI: Faturamento dos últimos 30 dias (vw_kpi_faturamento_30d)
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_kpi_faturamento_30d").select("*").execute().data
+        
+        faturamento = 0
+        if resultado and len(resultado) > 0:
+            faturamento = resultado[0].get("faturamento_ultimos_30_dias", 0)
+        
+        return {
+            "data": {
+                "faturamento_ultimos_30_dias": faturamento
+            },
+            "message": "Faturamento dos últimos 30 dias obtido com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
+
+@router.get("/kpi/ticket-medio-30d")
+def pegar_ticket_medio_30d(user = Depends(validar_token)):
+    """
+    KPI: Ticket médio dos últimos 30 dias (vw_kpi_ticket_medio_30d)
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_kpi_ticket_medio_30d").select("*").execute().data
+        
+        ticket_medio = 0
+        if resultado and len(resultado) > 0:
+            ticket_medio = resultado[0].get("ticket_medio_ultimos_30_dias", 0)
+        
+        return {
+            "data": {
+                "ticket_medio_ultimos_30_dias": ticket_medio
+            },
+            "message": "Ticket médio dos últimos 30 dias obtido com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
+
+# ==================== ENDPOINTS PARA GRÁFICOS ====================
+
+@router.get("/grafico/top5-revistas-hoje")
+def pegar_top5_revistas_hoje(user = Depends(validar_token)):
+    """
+    Gráfico: Top 5 revistas mais vendidas hoje (vw_chart_top5_vendidas_hoje)
+    Recomendado: Gráfico de Barras Horizontais
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_chart_top5_vendidas_hoje").select("*").execute().data
+        
+        return {
+            "data": resultado if resultado else [],
+            "message": "Top 5 revistas vendidas hoje obtido com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
+
+@router.get("/grafico/vendas-por-pagamento-30d")
+def pegar_vendas_por_pagamento_30d(user = Depends(validar_token)):
+    """
+    Gráfico: Vendas por método de pagamento (últimos 30 dias) (vw_chart_vendas_por_pagamento_30d)
+    Recomendado: Gráfico de Pizza/Rosca
+    """
+    try:
+        supabase_admin = pegar_usuario_admin()
+        
+        resultado = supabase_admin.table("vw_chart_vendas_por_pagamento_30d").select("*").execute().data
+        
+        return {
+            "data": resultado if resultado else [],
+            "message": "Vendas por método de pagamento dos últimos 30 dias obtidas com sucesso."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Algo de errado aconteceu: {str(e)}"
+        )
+
 
 # -----------------------------------------------------------------------------
 # Relatórios não sendo usados!!!
@@ -200,6 +407,5 @@ def pegar_relatorio_dia(user = Depends(validar_token)):
         }
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Algo de errado aconteceu: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  
         )
