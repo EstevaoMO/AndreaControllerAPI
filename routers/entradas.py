@@ -11,6 +11,9 @@ from services.extracao_entrada import processar_pdf_para_json
 from services.extracao import extrair_dados_entrada_local
 from routers.revistas import pegar_revistas
 
+# id_revista': None, 'nome': 'ALMANAQUE DE HISTORIAS CURTAS TURMA DA MONICA', 'numero_edicao': 16, 'qtd_estoque': 1, 'preco_capa': 11.9, 'url_revista': None
+# {'id_nota_entrega': None, 'id_usuario': None, 'ponto_venda_id': 48507, 'nota_entrega_id': 1049, 'data': '2025-11-08', 'url_documento': None}
+
 
 router = APIRouter(
     prefix="/entregas",
@@ -206,7 +209,6 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
         dados_entrega = {
             "id_usuario": user["sub"],
             "data_entrega": data_iso_gemini,
-            "numero_nota": nota_id_gemini,
         }
 
         resposta_insert = supabase_admin.table("documentos_entrega").insert(dados_entrega).execute()
