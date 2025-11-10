@@ -5,6 +5,7 @@ import pdfplumber
 import google.generativeai as genai
 from settings.settings import importar_configs
 from io import BytesIO
+from fastapi.concurrency import run_in_threadpool
 
 st = importar_configs()
 
@@ -74,8 +75,8 @@ def extrair_texto_pdf_bytes(file_bytes: bytes) -> Optional[str]:
             texto.append(texto_page)
     return "\n".join(texto).strip()
 
-def chamar_gemini(texto_bruto: str) -> str:
-    """Chama o Gemini e pede a resposta em JSON puro."""
+def chamar_gemini_sync(texto_bruto: str) -> str:
+    """Versão síncrona da chamada à API Gemini."""
     genai.configure(api_key=st.API_KEY)
     model = genai.GenerativeModel(
         st.MODEL_NAME,
@@ -84,6 +85,10 @@ def chamar_gemini(texto_bruto: str) -> str:
     content = f"{PROMPT_INSTRUCOES}\n\nTEXTO BRUTO A PROCESSAR:\n---\n{texto_bruto}\n---"
     resp = model.generate_content(content)
     return (resp.text or "").strip()
+
+async def chamar_gemini(texto_bruto: str) -> str:
+    """Wrapper assíncrono que roda a versão síncrona em uma thread separada."""
+    return await run_in_threadpool(chamar_gemini_sync, texto_bruto)
 
 def normalizar_tipos(dados: dict) -> dict:
     """Converte strings 'null' -> None, números em string -> int/float."""
@@ -120,7 +125,7 @@ def parse_json_resposta(s: str) -> dict:
     return normalizar_tipos(data)
     
 # Função de extração
-def processar_pdf_para_json(file_bytes: bytes) -> dict:
+async def processar_pdf_para_json(file_bytes: bytes) -> dict:
     """
     Função principal: recebe PDF binário, processa e retorna JSON estruturado.
     """
@@ -128,7 +133,7 @@ def processar_pdf_para_json(file_bytes: bytes) -> dict:
     if not texto:
         raise ValueError("[ERRO] Sem texto para processar.")
 
-    resposta = chamar_gemini(texto)
+    resposta = await chamar_gemini(texto)
     dados = parse_json_resposta(resposta)
     print(dados)
     return dados

@@ -175,7 +175,7 @@ async def cadastrar_chamada(file: UploadFile = File(...), user: dict = Depends(v
 
 
     try:
-        entrega_json = processar_pdf_para_json(arquivo_bytes)
+        entrega_json = await processar_pdf_para_json(arquivo_bytes)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Erro ao processar PDF (IA): {str(e)}")
 
