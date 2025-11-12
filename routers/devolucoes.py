@@ -121,6 +121,21 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
             if revista_existente:
                 id_revista_final = revista_existente["id_revista"]
 
+                if revista_existente["codigo_barras"] is None and revista_json.get("codigo_barras"):
+                    try:
+                        codigo_barras = str(revista_json.get("codigo_barras"))
+                        if codigo_barras and codigo_barras.isdigit():
+                            codigo_barras = codigo_barras.strip()[:13]
+                            if len(codigo_barras) != 13:
+                                codigo_barras = None
+                        else:
+                            codigo_barras = None
+                        supabase_admin.table("revistas").update({
+                            "codigo_barras": codigo_barras
+                        }).eq("id_revista", id_revista_final).execute()
+                    except Exception as e:
+                        print(f"Aviso: Não foi possível atualizar o código de barras da revista existente ID {id_revista_final}: {e}")
+
             else:
                 nova_revista = inserir_revista_legada(revista_json)
                 id_revista_final = nova_revista["id_revista"]
