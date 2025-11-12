@@ -58,12 +58,19 @@ def _cadastrar_revistas_db(chamada_json: Dict[str, Any], supabase_admin: Client,
         try:
             nome_revista = revista.get("nome")
             edicao_revista = revista.get("numero_edicao")
+            codigo_barras = str(revista.get("codigo_barras"))
+            if codigo_barras and codigo_barras.isdigit():
+                codigo_barras = codigo_barras.strip()[:13]
+                if len(codigo_barras) != 13:
+                    codigo_barras = None
+            else:
+                codigo_barras = None
             print(f"INFO: Revista '{nome_revista}' (Ed: {edicao_revista}) não encontrada. Criando como legada com estoque 0.")
 
             resposta_insert = supabase_admin.table("revistas").insert({
                 "nome": nome_revista,
                 "numero_edicao": edicao_revista,
-                "codigo_barras": revista.get("codigo_barras"),
+                "codigo_barras": codigo_barras,
                 "qtd_estoque": 0,
                 "preco_capa": revista.get("preco_capa", 0.0),
                 "preco_liquido": revista.get("preco_liquido", 0.0)
