@@ -270,7 +270,7 @@ async def get_entrega_por_id(id_entrega: int = Path(..., title="ID do Documento 
     try:
         resposta = (
             supabase_admin.table("documentos_entrega")
-            .select("*, revistas_documentos_entrega(*, revistas(nome, numero_edicao))")
+            .select("*, revistas_documentos_entrega(*, revistas(nome, numero_edicao, url_revista, codigo_barras))")
             .eq("id_documento_entrega", id_entrega)
             .eq("id_usuario", user["sub"])
             .single()
